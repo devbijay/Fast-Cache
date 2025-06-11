@@ -1,6 +1,6 @@
 [project]
 name = "fast-cache"
-version = "0.1.0"
+version = "0.1.3"
 description = "High-performance caching solution for FastAPI applications"
 readme = "README.md"
 license = "MIT"
