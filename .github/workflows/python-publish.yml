@@ -4,9 +4,13 @@ on:
   release:
     types: [published]
 
+
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +25,7 @@ jobs:
 
       - name: Build release distributions
         run: uv build
+
 
       - name: Publish to TestPyPI (dev branch)
         if: github.event.release.target_commitish == 'dev'
