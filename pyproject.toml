@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fast-cache"
+version = "0.1.0"
+description = "High-performance caching solution for FastAPI applications"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Bijay Nayak", email = "bijay6779@gmail.com" },
+]
+keywords = ["fastapi", "cache", "redis", "async", "python"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP",
+    "Typing :: Typed",
+]
+dependencies = [
+    "fastapi==0.95.0",
+    "redis==4.2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.18.0",
+    "pytest-cov>=3.0.0",
+]
+dev = [
+    "mypy>=0.990",
+    "ruff>=0.0.240",
+    "hatch>=1.14.1",
+    "twine>=6.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/devbijay/fast-cache"
+Documentation = "https://github.com/devbijay/fast-cache#readme"
+Repository = "https://github.com/devbijay/fast-cache.git"
+Issues = "https://github.com/devbijay/fast-cache/issues"
+
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["fast_cache"]
+
+
+
