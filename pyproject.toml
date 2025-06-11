@@ -1,13 +1,9 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "fast-cache"
-version = "0.1.0"
+version = "0.1.2"
 description = "High-performance caching solution for FastAPI applications"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "Bijay Nayak", email = "bijay6779@gmail.com" },
@@ -17,7 +13,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -29,8 +24,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "fastapi==0.95.0",
-    "redis==4.2.0",
+    "fastapi>=0.95.0",
+    "redis>=4.2.0",
 ]
 
 [project.optional-dependencies]
@@ -54,8 +49,14 @@ Issues = "https://github.com/devbijay/fast-cache/issues"
 
 
 
-[tool.hatch.build.targets.wheel]
-packages = ["fast_cache"]
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+publish-url = "https://upload.pypi.org/legacy/"
+explicit = true
 
-
-
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true

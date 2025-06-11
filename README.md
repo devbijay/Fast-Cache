@@ -47,8 +47,6 @@ cache.init_app(
     default_expire=300  # 5 minutes default expiration
 )
 
-# Register FastAPI lifespan event to manage cache connections
-app.add_event_handler("startup", lambda: app.state.cache_handler(app))
 
 # Use function caching decorator
 @app.get("/items/{item_id}")
@@ -97,7 +95,7 @@ cache.init_app(
 )
 ```
 
-### Cache Decorator
+### Caching a Function Result Using A Cache Decorator
 
 The `@cache.cached()` decorator is the simplest way to cache function results:
 
@@ -121,9 +119,22 @@ async def get_user_profile(user_id: int):
 def get_user_permissions(user_id: int):
     # Complex permission calculation
     return ["read", "write"]
+
+# Skip Cache for Specific Calls
+
+Sometimes you need to bypass the cache for certain requests:
+
+@cache.cached()
+async def get_weather(city: str, skip_cache: bool = False):
+    # Function will be called directly if skip_cache is True
+    return await fetch_weather_data(city)
+
+# Usage:
+weather = await get_weather("New York", skip_cache=True)  # Bypasses cache
 ```
 
-### Manual Cache Operations
+
+### Using Via Dependency Injection
 
 You can access the cache backend directly for more control:
 
@@ -148,19 +159,7 @@ async def get_data(cache_backend: Annotated[CacheBackend, Depends(cache.get_cach
     return data
 ```
 
-### Skip Cache for Specific Calls
 
-Sometimes you need to bypass the cache for certain requests:
-
-```python
-@cache.cached()
-async def get_weather(city: str, skip_cache: bool = False):
-    # Function will be called directly if skip_cache is True
-    return await fetch_weather_data(city)
-
-# Usage:
-weather = await get_weather("New York", skip_cache=True)  # Bypasses cache
-```
 
 ### Advanced: Implementing Custom Backends
 
