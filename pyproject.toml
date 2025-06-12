@@ -24,7 +24,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "fastapi>=0.95.0",
+    "fastapi>=0.100.0",
     "redis>=4.2.0",
 ]
 
@@ -60,3 +60,11 @@ name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.0.0",
+    "uvicorn[standard]>=0.34.3",
+]
