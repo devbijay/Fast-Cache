@@ -8,7 +8,7 @@ requires-python = ">=3.9"
 authors = [
     { name = "Bijay Nayak", email = "bijay6779@gmail.com" },
 ]
-keywords = ["fastapi", "cache", "redis", "async", "python"]
+keywords = ["fastapi", "cache", "redis", "async", "python", 'starlette', 'asyncio']
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
@@ -21,6 +21,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Utilities",
     "Typing :: Typed",
 ]
 dependencies = [
