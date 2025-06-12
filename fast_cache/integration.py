@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from typing import Optional, Callable, Union
+from typing import Optional, Callable, Union, AsyncIterator, Any
 from datetime import timedelta
 import inspect
 from functools import wraps
@@ -8,22 +8,30 @@ from .backends.backend import CacheBackend
 
 
 class FastAPICache:
-    """FastAPI Cache Extension"""
+    """
+    FastAPI Cache Extension.
+
+    This class provides caching utilities for FastAPI applications, including
+    decorator-based caching and dependency-injection-based backend access.
+    """
 
     def __init__(self) -> None:
+        """
+        Initialize the FastAPICache instance.
+        """
         self._backend: Optional[CacheBackend] = None
         self._app: Optional[FastAPI] = None
         self._default_expire: Optional[Union[int, timedelta]] = None
 
     def get_cache(self) -> CacheBackend:
         """
-        Dependency injection method that returns the cache backend.
+        Get the configured cache backend for dependency injection.
 
         Returns:
-            CacheBackend: The configured cache backend instance
+            CacheBackend: The configured cache backend instance.
 
         Raises:
-            RuntimeError: If cache is not initialized
+            RuntimeError: If the cache is not initialized.
         """
         if self._backend is None:
             raise RuntimeError("Cache not initialized. Call init_app first.")
@@ -34,20 +42,42 @@ class FastAPICache:
         expire: Optional[Union[int, timedelta]] = None,
         key_builder: Optional[Callable[..., str]] = None,
         namespace: Optional[str] = None,
-    ):
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Decorator for caching function results.
 
         Args:
-            expire: Expiration time in seconds or timedelta
-            key_builder: Custom function to build cache key
-            namespace: Optional namespace for the cache key
+            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as a timedelta.
+            key_builder (Optional[Callable[..., str]]): Custom function to build the cache key.
+            namespace (Optional[str]): Optional namespace for the cache key.
+
+        Returns:
+            Callable: A decorator that caches the function result.
         """
 
-        def decorator(func: Callable) -> Callable:
+        def decorator(func: Callable) -> Callable[..., Any]:
+            """
+            The actual decorator that wraps the function.
+
+            Args:
+                func (Callable): The function to be cached.
+
+            Returns:
+                Callable: The wrapped function with caching.
+            """
             is_async = inspect.iscoroutinefunction(func)
 
             def build_cache_key(*args, **kwargs) -> str:
+                """
+                Build the cache key for the function call.
+
+                Args:
+                    *args: Positional arguments for the function.
+                    **kwargs: Keyword arguments for the function.
+
+                Returns:
+                    str: The generated cache key.
+                """
                 if key_builder is not None:
                     key = key_builder(*args, **kwargs)
                 else:
@@ -60,7 +90,17 @@ class FastAPICache:
                 return key
 
             @wraps(func)
-            async def async_wrapper(*args, **kwargs):
+            async def async_wrapper(*args, **kwargs) -> Any:
+                """
+                Async wrapper for caching.
+
+                Args:
+                    *args: Positional arguments.
+                    **kwargs: Keyword arguments.
+
+                Returns:
+                    Any: The cached or computed result.
+                """
                 if not self._backend:
                     return await func(*args, **kwargs)
 
@@ -84,6 +124,16 @@ class FastAPICache:
 
             @wraps(func)
             def sync_wrapper(*args, **kwargs):
+                """
+                Sync wrapper for caching.
+
+                Args:
+                    *args: Positional arguments.
+                    **kwargs: Keyword arguments.
+
+                Returns:
+                    Any: The cached or computed result.
+                """
                 if not self._backend:
                     return func(*args, **kwargs)
 
@@ -110,8 +160,19 @@ class FastAPICache:
         return decorator
 
     @asynccontextmanager
-    async def lifespan_handler(self, app: FastAPI):
-        """Lifespan context manager for FastAPI"""
+    async def lifespan_handler(self, app: FastAPI) -> AsyncIterator[None]:
+        """
+        Lifespan context manager for FastAPI.
+
+        This can be used as the `lifespan` argument to FastAPI to manage
+        cache lifecycle.
+
+        Args:
+            app (FastAPI): The FastAPI application instance.
+
+        Yields:
+            None
+        """
         if not hasattr(app, "state"):
             app.state = {}
         app.state["cache"] = self
@@ -129,9 +190,9 @@ class FastAPICache:
         Initialize the cache extension.
 
         Args:
-            app: FastAPI application instance
-            backend: Cache backend instance
-            default_expire: Default expiration time for cached items
+            app (FastAPI): FastAPI application instance.
+            backend (CacheBackend): Cache backend instance.
+            default_expire (Optional[Union[int, timedelta]]): Default expiration time for cached items.
         """
         self._backend = backend
         self._app = app

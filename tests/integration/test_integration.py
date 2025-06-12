@@ -13,14 +13,11 @@ def client(request):
         backend = InMemoryBackend(namespace="integration-demo")
     else:
         backend = RedisBackend("redis://localhost:6379/0", namespace="integration-demo")
-    cache.init_app(
-        app=app,
-        backend=backend,
-        default_expire=120
-    )
+    cache.init_app(app=app, backend=backend, default_expire=120)
     print(f"\n[TEST] Using backend: {type(backend).__name__}")
     with TestClient(app) as c:
         yield c
+
 
 def test_decorator_async_cache(client):
     # First call: not cached
@@ -39,6 +36,7 @@ def test_decorator_async_cache(client):
     assert resp3.status_code == 200
     assert resp3.json()["result"] == val1  # Function is deterministic
 
+
 def test_decorator_sync_cache(client):
     resp1 = client.get("/decorator/sync", params={"x": 7})
     assert resp1.status_code == 200
@@ -47,6 +45,7 @@ def test_decorator_sync_cache(client):
     resp2 = client.get("/decorator/sync", params={"x": 7})
     assert resp2.status_code == 200
     assert resp2.json()["result"] == val1
+
 
 def test_decorator_custom_key(client):
     resp1 = client.get("/decorator/custom", params={"x": 42})
@@ -57,6 +56,7 @@ def test_decorator_custom_key(client):
     resp2 = client.get("/decorator/custom", params={"x": 42})
     assert resp2.status_code == 200
     assert resp2.json()["custom_key"] == val1
+
 
 def test_decorator_skip_cache(client):
     resp1 = client.get("/decorator/skip", params={"x": 3})
@@ -73,12 +73,14 @@ def test_decorator_skip_cache(client):
     assert resp3.status_code == 200
     assert resp3.json()["result"] == val1
 
+
 def test_decorator_pydantic(client):
     resp = client.get("/decorator/pydantic", params={"name": "foo", "value": 123})
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "foo"
     assert data["value"] == 123
+
 
 def test_di_set_get_has_delete_clear(client):
     # Set a value
@@ -117,6 +119,7 @@ def test_di_set_get_has_delete_clear(client):
     assert resp.status_code == 200
     assert resp.json()["exists"] is False
 
+
 def test_profile_cache(client):
     # First call: not cached
     resp1 = client.get("/profile/123")
@@ -127,6 +130,7 @@ def test_profile_cache(client):
     resp2 = client.get("/profile/123")
     assert resp2.status_code == 200
     assert resp2.json()["cached"] is True
+
 
 def test_weather_skip_cache(client):
     # First call: cached

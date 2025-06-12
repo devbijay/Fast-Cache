@@ -6,13 +6,16 @@ from datetime import timedelta
 from typing import Any, Dict, Optional, Union, Tuple
 from .backend import CacheBackend
 
+
 class InMemoryBackend(CacheBackend):
     """
     In-memory cache backend implementation with namespace support,
     thread/async safety, and efficient expiration cleanup.
     """
 
-    def __init__(self, namespace: str = "fastapi-cache", max_size: Optional[int] = None) -> None:
+    def __init__(
+        self, namespace: str = "fastapi-cache", max_size: Optional[int] = None
+    ) -> None:
         """
         Args:
             namespace: Namespace prefix for all keys (default: "fastapi-cache")
@@ -33,7 +36,9 @@ class InMemoryBackend(CacheBackend):
             return False
         return time.monotonic() > expire_time
 
-    def _get_expire_time(self, expire: Optional[Union[int, timedelta]]) -> Optional[float]:
+    def _get_expire_time(
+        self, expire: Optional[Union[int, timedelta]]
+    ) -> Optional[float]:
         if expire is None:
             return None
         seconds = expire.total_seconds() if isinstance(expire, timedelta) else expire
@@ -46,7 +51,11 @@ class InMemoryBackend(CacheBackend):
 
     def _cleanup(self) -> None:
         now = time.monotonic()
-        keys_to_delete = [k for k, (_, exp) in list(self._cache.items()) if exp is not None and now > exp]
+        keys_to_delete = [
+            k
+            for k, (_, exp) in list(self._cache.items())
+            if exp is not None and now > exp
+        ]
         for k in keys_to_delete:
             self._cache.pop(k, None)
 
@@ -55,7 +64,6 @@ class InMemoryBackend(CacheBackend):
             await asyncio.sleep(60)
             async with self._async_lock:
                 self._cleanup()
-
 
     def get(self, key: str) -> Any:
         k = self._make_key(key)
@@ -70,7 +78,9 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return None
 
-    def set(self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None) -> None:
+    def set(
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
+    ) -> None:
         k = self._make_key(key)
         expire_time = self._get_expire_time(expire)
         with self._lock:
@@ -103,7 +113,6 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return False
 
-
     async def aget(self, key: str) -> Any:
         k = self._make_key(key)
         async with self._async_lock:
@@ -116,7 +125,9 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return None
 
-    async def aset(self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None) -> None:
+    async def aset(
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
+    ) -> None:
         k = self._make_key(key)
         expire_time = self._get_expire_time(expire)
         async with self._async_lock:

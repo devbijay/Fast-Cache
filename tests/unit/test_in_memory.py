@@ -2,18 +2,22 @@ import pytest
 import asyncio
 from fast_cache import InMemoryBackend
 
+
 @pytest.fixture
 def cache():
     return InMemoryBackend(namespace="test-ns", max_size=3)
+
 
 def test_set_and_get(cache):
     cache.set("foo", "bar")
     assert cache.get("foo") == "bar"
 
+
 def test_delete(cache):
     cache.set("foo", "bar")
     cache.delete("foo")
     assert cache.get("foo") is None
+
 
 def test_clear(cache):
     cache.set("foo", "bar")
@@ -22,17 +26,22 @@ def test_clear(cache):
     assert cache.get("foo") is None
     assert cache.get("baz") is None
 
+
 def test_has(cache):
     cache.set("foo", "bar")
     assert cache.has("foo")
     cache.delete("foo")
     assert not cache.has("foo")
 
+
 def test_expire(cache):
     cache.set("foo", "bar", expire=1)
     assert cache.get("foo") == "bar"
-    import time; time.sleep(1.1)
+    import time
+
+    time.sleep(1.1)
     assert cache.get("foo") is None
+
 
 def test_lru_eviction(cache):
     cache.set("a", 1)
@@ -41,6 +50,7 @@ def test_lru_eviction(cache):
     cache.set("d", 4)  # Should evict "a"
     assert cache.get("a") is None
     assert cache.get("b") == 2
+
 
 @pytest.mark.asyncio
 async def test_async_set_and_get():
