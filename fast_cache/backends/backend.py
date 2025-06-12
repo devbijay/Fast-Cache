@@ -6,33 +6,34 @@ from datetime import timedelta
 class CacheBackend(ABC):
     """
     Abstract base class for cache backends.
+
     All cache backend implementations must inherit from this class and implement
-    both synchronous and asynchronous methods.
+    both synchronous and asynchronous methods for cache operations.
     """
 
     @abstractmethod
-    async def aget(self, key: str) -> Any:
+    async def aget(self, key: str) -> Optional[Any]:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
-            key: The key to retrieve.
+            key (str): The key to retrieve.
 
         Returns:
-            The cached value or None if not found.
+            Optional[Any]: The cached value, or None if not found.
         """
         pass
 
     @abstractmethod
-    def get(self, key: str) -> Any:
+    def get(self, key: str) -> Optional[Any]:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
-            key: The key to retrieve.
+            key (str): The key to retrieve.
 
         Returns:
-            The cached value or None if not found.
+            Optional[Any]: The cached value, or None if not found.
         """
         pass
 
@@ -44,9 +45,9 @@ class CacheBackend(ABC):
         Asynchronously set a value in the cache.
 
         Args:
-            key: The key under which to store the value.
-            value: The value to store.
-            expire: Expiration time in seconds or as timedelta.
+            key (str): The key under which to store the value.
+            value (Any): The value to store.
+            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
         """
         pass
 
@@ -58,9 +59,9 @@ class CacheBackend(ABC):
         Synchronously set a value in the cache.
 
         Args:
-            key: The key under which to store the value.
-            value: The value to store.
-            expire: Expiration time in seconds or as timedelta.
+            key (str): The key under which to store the value.
+            value (Any): The value to store.
+            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
         """
         pass
 
@@ -70,7 +71,7 @@ class CacheBackend(ABC):
         Asynchronously delete a value from the cache.
 
         Args:
-            key: The key to delete.
+            key (str): The key to delete.
         """
         pass
 
@@ -80,7 +81,7 @@ class CacheBackend(ABC):
         Synchronously delete a value from the cache.
 
         Args:
-            key: The key to delete.
+            key (str): The key to delete.
         """
         pass
 
@@ -104,10 +105,10 @@ class CacheBackend(ABC):
         Asynchronously check if a key exists in the cache.
 
         Args:
-            key: The key to check.
+            key (str): The key to check.
 
         Returns:
-            True if the key exists, False otherwise.
+            bool: True if the key exists, False otherwise.
         """
         pass
 
@@ -117,9 +118,9 @@ class CacheBackend(ABC):
         Synchronously check if a key exists in the cache.
 
         Args:
-            key: The key to check.
+            key (str): The key to check.
 
         Returns:
-            True if the key exists, False otherwise.
+            bool: True if the key exists, False otherwise.
         """
         pass
