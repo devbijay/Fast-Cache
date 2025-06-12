@@ -27,8 +27,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "fastapi>=0.100.0",
+    "fastapi>=0.75.0",
     "redis>=4.2.0",
+    "uvicorn[standard]>=0.20.0",
 ]
 
 [project.optional-dependencies]

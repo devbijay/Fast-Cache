@@ -70,6 +70,8 @@ async def manual_cache_example(cache_backend: Annotated[RedisBackend, Depends(ca
     value = await cache_backend.aget("my-key")
     return {"cached_value": value}
 ```
+Now You Can use the cache from other Sub Routes by importing from
+```from fast_cache import cache```
 
 ## Detailed Usage
 
@@ -95,7 +97,7 @@ cache.init_app(
 )
 ```
 
-### Caching a Function Result Using A Cache Decorator
+### Method1: Caching a Function Result Using A Cache Decorator
 
 The `@cache.cached()` decorator is the simplest way to cache function results:
 
@@ -134,7 +136,7 @@ weather = await get_weather("New York", skip_cache=True)  # Bypasses cache
 ```
 
 
-### Using Via Dependency Injection
+### Method 2: Using Via Dependency Injection
 
 You can access the cache backend directly for more control:
 
