@@ -1,10 +1,10 @@
-# Fast-Cache
+# fastapi-cachekit
 
-A high-performance, flexible caching solution for FastAPI applications. Fast-Cache supports both synchronous and asynchronous operations with a clean API and multiple backend options.
+A high-performance, flexible caching solution for FastAPI applications. fastapi-cachekit supports both synchronous and asynchronous operations with a clean API and multiple backend options.
 
-[![PyPI version](https://badge.fury.io/py/fast-cache.svg)](https://badge.fury.io/py/fast-cache)
+[![PyPI version](https://badge.fury.io/py/fastapi-cachekit.svg)](https://badge.fury.io/py/fastapi-cachekit)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
-[![Downloads](https://pepy.tech/badge/fastapi-cache)](https://pepy.tech/project/fast-cache)
+[![Downloads](https://pepy.tech/badge/fastapi-cache)](https://pepy.tech/project/fastapi-cachekit)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -34,27 +34,27 @@ A high-performance, flexible caching solution for FastAPI applications. Fast-Cac
 
 **Base (in-memory only):**
 ```bash
-pip install fast-cache
+pip install fastapi-cachekit
 ```
 
 **With Redis:**
 ```bash
-pip install fast-cache[redis]
+pip install fastapi-cachekit[redis]
 ```
 
 **With Postgres:**
 ```bash
-pip install fast-cache[postgres]
+pip install fastapi-cachekit[postgres]
 ```
 
 **With Memcached:**
 ```bash
-pip install fast-cache[memcached]
+pip install fastapi-cachekit[memcached]
 ```
 
 **All backends:**
 ```bash
-pip install fast-cache[all]
+pip install fastapi-cachekit[all]
 ```
 
 
