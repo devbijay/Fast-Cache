@@ -3,8 +3,7 @@ import inspect
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
-import redis.asyncio as aioredis
-import redis
+
 from .backend import CacheBackend
 
 
@@ -36,6 +35,16 @@ class RedisBackend(CacheBackend):
             pool_size (int): Minimum number of connections in the pool.
             max_connections (int): Maximum number of connections in the pool.
         """
+
+        try:
+            import redis.asyncio as aioredis
+            import redis
+        except ImportError:
+            raise ImportError(
+                "RedisBackend requires the 'redis' package. "
+                "Install it with: pip install fast-cache[redis]"
+            )
+
         self._namespace = namespace
         self._sync_pool = redis.ConnectionPool.from_url(
             redis_url, max_connections=max_connections, decode_responses=False

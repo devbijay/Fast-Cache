@@ -1,8 +1,6 @@
 import pickle
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, Union
-
-from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from .backend import CacheBackend
 
 
@@ -20,6 +18,14 @@ class PostgresBackend(CacheBackend):
         min_size: int = 1,
         max_size: int = 10,
     ) -> None:
+        try:
+            from psycopg_pool import AsyncConnectionPool, ConnectionPool
+        except ImportError:
+            raise ImportError(
+                "PostgresBackend requires the 'psycopg[pool]' package. "
+                "Install it with: pip install fast-cache[postgres]"
+            )
+
         self._namespace = namespace
         self._table_name = f"{namespace}_cache_store"
 
