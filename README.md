@@ -19,17 +19,44 @@ A high-performance, flexible caching solution for FastAPI applications. Fast-Cac
 - ✅ Type hinting throughout the codebase
 - ✅ Expiration time support (seconds or timedelta)
 
-## Installation
+## 📦 Backends & Sync/Async Support
 
+| Backend            | Sync API | Async API | Install Extra         |
+|--------------------|:--------:|:---------:|----------------------|
+| `InMemoryBackend`  |   ✅     |    ✅     | _built-in_           |
+| `RedisBackend`     |   ✅     |    ✅     | `redis`              |
+| `PostgresBackend`  |   ✅     |    ✅     | `postgres`           |
+| `MemcachedBackend` |   ✅     |    ✅     | `memcached`          |
+
+---
+
+## 🛠️ Installation
+
+**Base (in-memory only):**
 ```bash
 pip install fast-cache
 ```
 
-or with uv:
-
+**With Redis:**
 ```bash
-uv add fast-cache
+pip install fast-cache[redis]
 ```
+
+**With Postgres:**
+```bash
+pip install fast-cache[postgres]
+```
+
+**With Memcached:**
+```bash
+pip install fast-cache[memcached]
+```
+
+**All backends:**
+```bash
+pip install fast-cache[all]
+```
+
 
 ## Quick Start
 
