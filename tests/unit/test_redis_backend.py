@@ -3,11 +3,6 @@ import asyncio
 from fast_cache import RedisBackend
 
 
-@pytest.fixture(scope="module")
-def redis_url():
-    return "redis://localhost:6379/0"
-
-
 @pytest.fixture
 def cache(redis_url):
     backend = RedisBackend(redis_url, namespace="test-ns")
@@ -52,8 +47,7 @@ def test_expire(cache):
 
 
 @pytest.mark.asyncio
-async def test_async_set_and_get(redis_url):
-    cache = RedisBackend(redis_url, namespace="test-ns-async")
+async def test_async_set_and_get(cache):
     await cache.aset("foo", "bar")
     assert await cache.aget("foo") == "bar"
     await cache.aclear()

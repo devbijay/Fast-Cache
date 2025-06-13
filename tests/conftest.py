@@ -5,6 +5,7 @@ import pytest
 import os
 
 import pytest_asyncio
+from testcontainers.memcached import MemcachedContainer
 from testcontainers.redis import RedisContainer
 
 if sys.platform == "win32":
@@ -28,10 +29,16 @@ try:
 except ImportError:
     POSTGRES_AVAILABLE = False
 
+try:
+    from fast_cache import MemcachedBackend
+    MEMCACHED_AVAILABLE = True
+except ImportError:
+    MEMCACHED_AVAILABLE = False
+
 @pytest.fixture
 def in_memory_cache():
     """Fixture for a fresh InMemoryBackend instance."""
-    cache = InMemoryBackend(namespace="test-ns", max_size=10)
+    cache = InMemoryBackend(namespace="test-ns", max_size=3)
     cache.clear()
     yield cache
     cache.clear()
@@ -81,7 +88,6 @@ def postgres_cache(postgres_dsn: str) -> PostgresBackend:
     finally:
         # Teardown: guaranteed to run even if the test fails
         backend.clear()
-        asyncio.run(backend.close())
 
 
 @pytest_asyncio.fixture
@@ -93,4 +99,26 @@ async def async_postgres_cache(postgres_dsn: str) -> PostgresBackend:
     finally:
         # Teardown: guaranteed to run even if the test fails
         await backend.aclear()
-        backend.close()
+        await backend.close()
+
+
+
+@pytest.fixture(scope="session")
+def memcached_container():
+    with MemcachedContainer() as container:
+        yield container
+
+@pytest.fixture(scope="session")
+def memcached_url(memcached_container):
+    host = memcached_container.get_container_host_ip()
+    port = int(memcached_container.get_exposed_port(11211))
+    return host, port
+
+@pytest.fixture
+def memcached_cache(memcached_url):
+    if not MEMCACHED_AVAILABLE:
+        pytest.skip("MemcachedBackend not available")
+    host, port = memcached_url
+    backend = MemcachedBackend(host=host, port=port, namespace="test-ns")
+    yield backend
+    backend.clear()
