@@ -1,8 +1,18 @@
+import asyncio
+import sys
+
 import pytest
 import os
 
-from examples.main import app
+import pytest_asyncio
+from testcontainers.redis import RedisContainer
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
 from fast_cache import InMemoryBackend
+from testcontainers.postgres import PostgresContainer
 
 # Only import RedisBackend and set up Redis if redis is available
 try:
@@ -12,6 +22,11 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
 
+try:
+    from fast_cache import PostgresBackend
+    POSTGRES_AVAILABLE = True
+except ImportError:
+    POSTGRES_AVAILABLE = False
 
 @pytest.fixture
 def in_memory_cache():
@@ -23,9 +38,15 @@ def in_memory_cache():
 
 
 @pytest.fixture(scope="session")
-def redis_url():
-    """Fixture for Redis URL, can be overridden by environment variable."""
-    return os.getenv("TEST_REDIS_URL", "redis://localhost:6379/0")
+def redis_container():
+    with RedisContainer() as container:
+        yield container
+
+@pytest.fixture(scope="session")
+def redis_url(redis_container):
+    host = redis_container.get_container_host_ip()
+    port = redis_container.get_exposed_port(6379)
+    return f"redis://{host}:{port}/0"
 
 
 @pytest.fixture
@@ -37,3 +58,39 @@ def redis_cache(redis_url):
     cache.clear()
     yield cache
     cache.clear()
+
+
+
+@pytest.fixture(scope="session")
+def postgres_container():
+    with PostgresContainer() as container:
+        yield container
+
+@pytest.fixture(scope="session")
+def postgres_dsn(postgres_container) -> str:
+    # Use the same container for all tests
+    return postgres_container.get_connection_url(driver=None)
+
+
+@pytest.fixture
+def postgres_cache(postgres_dsn: str) -> PostgresBackend:
+    backend = PostgresBackend(postgres_dsn, namespace="pytest_sync")
+    try:
+        backend.clear()  # Ensure a clean slate before the test
+        yield backend
+    finally:
+        # Teardown: guaranteed to run even if the test fails
+        backend.clear()
+        asyncio.run(backend.close())
+
+
+@pytest_asyncio.fixture
+async def async_postgres_cache(postgres_dsn: str) -> PostgresBackend:
+    backend = PostgresBackend(postgres_dsn, namespace="pytest_async")
+    try:
+        await backend.aclear()
+        yield backend
+    finally:
+        # Teardown: guaranteed to run even if the test fails
+        await backend.aclear()
+        backend.close()
