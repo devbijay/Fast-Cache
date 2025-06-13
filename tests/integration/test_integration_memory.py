@@ -2,19 +2,17 @@ import os
 import time
 import pytest
 from fastapi.testclient import TestClient
+from testcontainers.postgres import PostgresContainer
+from testcontainers.redis import RedisContainer
+
 from examples.main import app
-from fast_cache import RedisBackend, cache, InMemoryBackend
+from fast_cache import RedisBackend, cache, InMemoryBackend, PostgresBackend
 
 
-@pytest.fixture(params=["memory", "redis"])
-def client(request):
-    backend_type = request.param
-    if backend_type == "memory":
-        backend = InMemoryBackend(namespace="integration-demo")
-    else:
-        backend = RedisBackend("redis://localhost:6379/0", namespace="integration-demo")
+@pytest.fixture
+def client():
+    backend = InMemoryBackend(namespace="integration-demo")
     cache.init_app(app=app, backend=backend, default_expire=120)
-    print(f"\n[TEST] Using backend: {type(backend).__name__}")
     with TestClient(app) as c:
         yield c
 
