@@ -29,7 +29,7 @@ classifiers = [
 dependencies = [
     "fastapi>=0.115.12",
     "psycopg[binary]>=3.2.9",
-    "testcontainers[redis]>=4.10.0",
+    "testcontainers[memcached,postgres,redis]>=4.10.0",
 ]
 
 [project.urls]
@@ -67,9 +67,15 @@ redis = [
 postgres = [
     "psycopg[pool]>=3.2.9"
 ]
+memcached = [
+    "aiomcache>=0.8.1",
+    "pymemcache>=4.0.0"
+]
 all = [
     "redis>=4.2.0",
-    "psycopg[pool]>=3.2.9"
+    "psycopg[pool]>=3.2.9",
+    "aiomcache>=0.8.1",
+    "pymemcache>=4.0.0"
 ]
 
 [dependency-groups]
@@ -78,6 +84,6 @@ dev = [
     "psycopg-binary>=3.2.9",
     "pytest>=8.4.0",
     "pytest-asyncio>=1.0.0",
-    "testcontainers[postgresql,redis]>=4.10.0",
+    "testcontainers[postgres,redis,memcached]>=4.10.0",
     "uvicorn[standard]>=0.34.3",
 ]
