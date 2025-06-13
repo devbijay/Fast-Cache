@@ -84,6 +84,7 @@ dev = [
     "psycopg-binary>=3.2.9",
     "pytest>=8.4.0",
     "pytest-asyncio>=1.0.0",
+    "pytest-cov>=6.2.1",
     "testcontainers[postgres,redis,memcached]>=4.10.0",
     "uvicorn[standard]>=0.34.3",
 ]
