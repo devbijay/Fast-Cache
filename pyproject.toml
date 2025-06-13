@@ -27,22 +27,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "fastapi>=0.75.0",
-    "redis>=4.2.0",
-    "uvicorn[standard]>=0.20.0",
-]
-
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.18.0",
-    "pytest-cov>=3.0.0",
-]
-dev = [
-    "mypy>=0.990",
-    "ruff>=0.0.240",
-    "hatch>=1.14.1",
-    "twine>=6.1.0",
+    "fastapi>=0.115.12",
+    "psycopg[binary]>=3.2.9",
+    "testcontainers[redis]>=4.10.0",
 ]
 
 [project.urls]
@@ -50,7 +37,6 @@ Homepage = "https://github.com/devbijay/fast-cache"
 Documentation = "https://github.com/devbijay/fast-cache#readme"
 Repository = "https://github.com/devbijay/fast-cache.git"
 Issues = "https://github.com/devbijay/fast-cache/issues"
-
 
 
 [[tool.uv.index]]
@@ -65,10 +51,33 @@ url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
+
+
+
+dependencies = [
+    "fastapi>=0.75.0",
+    "uvicorn[standard]>=0.20.0",
+]
+
+
+[project.optional-dependencies]
+redis = [
+    "redis>=4.2.0"
+]
+postgres = [
+    "psycopg[pool]>=3.2.9"
+]
+all = [
+    "redis>=4.2.0",
+    "psycopg[pool]>=3.2.9"
+]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "psycopg-binary>=3.2.9",
     "pytest>=8.4.0",
     "pytest-asyncio>=1.0.0",
+    "testcontainers[postgresql,redis]>=4.10.0",
     "uvicorn[standard]>=0.34.3",
 ]
