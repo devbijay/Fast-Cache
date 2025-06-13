@@ -26,10 +26,10 @@ classifiers = [
     "Topic :: Utilities",
     "Typing :: Typed",
 ]
+
 dependencies = [
-    "fastapi>=0.115.12",
-    "psycopg[binary]>=3.2.9",
-    "testcontainers[memcached,postgres,redis]>=4.10.0",
+    "fastapi>=0.75.0",
+    "uvicorn[standard]>=0.20.0",
 ]
 
 [project.urls]
@@ -54,10 +54,7 @@ explicit = true
 
 
 
-dependencies = [
-    "fastapi>=0.75.0",
-    "uvicorn[standard]>=0.20.0",
-]
+
 
 
 [project.optional-dependencies]
