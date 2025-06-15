@@ -6,6 +6,7 @@ import os
 
 import pytest_asyncio
 from testcontainers.memcached import MemcachedContainer
+from testcontainers.mongodb import MongoDbContainer
 from testcontainers.redis import RedisContainer
 
 if sys.platform == "win32":
@@ -122,3 +123,15 @@ def memcached_cache(memcached_url):
     backend = MemcachedBackend(host=host, port=port, namespace="test-ns")
     yield backend
     backend.clear()
+
+@pytest.fixture(scope="session")
+def mongo_url():
+    with MongoDbContainer(username='test', password='test', dbname='testdb') as container:
+        db_url = container.get_connection_url()
+        # Always add authSource to be explicit
+        if not db_url.endswith('/testdb'):
+            db_url = f"{db_url}/testdb"
+        if "authSource" not in db_url:
+            db_url = f"{db_url}?authSource=admin"
+        print(f"\n[TEST] MongoDB URL: {db_url}")
+        yield db_url

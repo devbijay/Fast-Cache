@@ -5,8 +5,9 @@ from .backends.redis import RedisBackend
 from .backends.memory import InMemoryBackend
 from .backends.postgres import PostgresBackend
 from .backends.memcached import MemcachedBackend
+from .backends.mongodb import MongoDBBackend
 
-__all__ = ["FastAPICache", "RedisBackend", "CacheBackend", "InMemoryBackend","PostgresBackend", "cache","MemcachedBackend" ]
+__all__ = ["FastAPICache", "RedisBackend", "CacheBackend", "InMemoryBackend","PostgresBackend", "cache","MemcachedBackend", "MongoDBBackend" ]
 
 
 # Create global cache instance

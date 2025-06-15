@@ -22,7 +22,7 @@ You can choose the backend that fits your needs, and switch between them with mi
 ## 🌟 Benefits
 
 - **Plug-and-play:** Add caching to any FastAPI endpoint with a simple decorator.
-- **Multiple backends:** Use in-memory, Redis, Postgres, or Memcached—swap backends with a single line of code.
+- **Multiple backends:** Use in-memory, Redis, Postgres, or Memcache. Swap backends with a single line of code.
 - **Sync & Async support:** Works seamlessly with both synchronous and asynchronous FastAPI endpoints.
 - **Performance:** Reduce database load, speed up API responses, and improve scalability.
 - **Optional dependencies:** Only install the backend you need, keeping your project lightweight.
@@ -33,12 +33,13 @@ You can choose the backend that fits your needs, and switch between them with mi
 
 ## 📦 Backends & Sync/Async Support
 
-| Backend            | Sync API | Async API | Install Extra         |
-|--------------------|:--------:|:---------:|----------------------|
-| `InMemoryBackend`  |   ✅     |    ✅     | _built-in_           |
-| `RedisBackend`     |   ✅     |    ✅     | `redis`              |
-| `PostgresBackend`  |   ✅     |    ✅     | `postgres`           |
-| `MemcachedBackend` |   ✅     |    ✅     | `memcached`          |
+| Backend            | Sync API | Async API | Install Extra |
+|--------------------|:--------:|:---------:|---------------|
+| `InMemoryBackend`  |   ✅     |    ✅     | _built-in_    |
+| `RedisBackend`     |   ✅     |    ✅     | `redis`       |
+| `PostgresBackend`  |   ✅     |    ✅     | `postgres`    |
+| `MemcachedBackend` |   ✅     |    ✅     | `memcached`   |
+| `MongoDB`          |   ✅     |    ✅     | `mongodb`     |
 
 ---
 
