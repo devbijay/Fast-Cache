@@ -33,7 +33,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/devbijay/fast-cache"
-Documentation = "https://github.com/devbijay/fast-cache#readme"
+Documentation = "https://devbijay.github.io/Fast-Cache/"
 Repository = "https://github.com/devbijay/fast-cache.git"
 Issues = "https://github.com/devbijay/fast-cache/issues"
 
