@@ -1,5 +1,6 @@
 site_name: FastAPI CacheKit
 repo_url: https://github.com/devbijay/Fast-Cache
+edit_uri: edit/main/docs/
 repo_name: FastAPI CacheKit
 site_url: https://devbijay.github.io/Fast-Cache
 theme:
@@ -9,6 +10,20 @@ theme:
 
   features:
     - navigation.instant
+    - navigation.instant
+    - navigation.tabs
+    - navigation.top
+    - navigation.sections
+    - navigation.expand
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - content.action.view
+    - content.footnote.tooltips
 
   font:
     text: Roboto
@@ -37,9 +52,17 @@ nav:
       - Redis: backends/redis.md
       - Postgres: backends/postgres.md
       - Memcached: backends/memcached.md
+      - MongoDB: backends/mongodb.md
   - API Reference: api.md
 
 extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/devbijay/Fast-Cache
+      name: GitHub
+  announcement:
+    type: info
+    text: "⭐️ Star FastAPI CacheKit on [GitHub](https://github.com/devbijay/Fast-Cache)!"
   consent:
     title: Cookie consent
     description: >-
@@ -49,6 +72,12 @@ extra:
       make our documentation better.
 
 plugins:
+  - search:
+      lang: en
+      separator: '[\s\-\.]+'
+      pipeline:
+        - stemmer
+        - stopWordFilter
   - mkdocstrings:
       handlers:
         python:
