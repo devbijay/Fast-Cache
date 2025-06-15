@@ -1,8 +1,14 @@
 import pickle
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, Union
 from .backend import CacheBackend
 
+
+def _validate_namespace(namespace: str) -> str:
+    if not re.match(r"^[A-Za-z0-9_]+$", namespace):
+        raise ValueError("Invalid namespace: only alphanumeric and underscore allowed")
+    return namespace
 
 class PostgresBackend(CacheBackend):
     """
@@ -26,7 +32,7 @@ class PostgresBackend(CacheBackend):
                 "Install it with: pip install fast-cache[postgres]"
             )
 
-        self._namespace = namespace
+        self._namespace = _validate_namespace(namespace)
         self._table_name = f"{namespace}_cache_store"
 
         # The pools are opened on creation and will auto-reopen if needed
@@ -38,6 +44,13 @@ class PostgresBackend(CacheBackend):
             conninfo=dsn, min_size=min_size, max_size=max_size, open=False
         )
         self._create_unlogged_table_if_not_exists()
+
+    def _validate_namespace(namespace: str) -> str:
+        if not re.match(r"^[A-Za-z0-9_]+$", namespace):
+            raise ValueError(
+                "Invalid namespace: only alphanumeric and underscore allowed"
+            )
+        return namespace
 
     def _create_unlogged_table_if_not_exists(self):
         """Create the cache table if it doesn't exist."""
