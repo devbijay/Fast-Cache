@@ -9,90 +9,53 @@ You can use **pip**, **uv**, or **poetry** and only install the backends you nee
 
 Install the core package (in-memory backend only):
 
-### **pip**
-```
-pip install fastapi-cachekit
-```
-
-### **uv**
-```
-uv add fastapi-cachekit
-```
-
-### **poetry**
-```
-poetry add fastapi-cachekit
-```
+- **pip** `pip install fastapi-cachekit`
+- **uv** `uv add fastapi-cachekit`
+- **poetry** `poetry add fastapi-cachekit`
 
 ---
 
 ## 🔌 Optional Backends
 
-You can install support for Redis, Postgres, or Memcached by specifying the appropriate "extra".
+You can install support for Redis, Postgres, MongoDB or Memcached by specifying the appropriate "extra".
 
 ### **Redis Backend**
 
-- **pip**
-  ```
-  pip install fastapi-cachekit[redis]
-  ```
-- **uv**
-  ```
-  uv add fastapi-cachekit[redis]
-  ```
-- **poetry**
-  ```
-  poetry add fastapi-cachekit -E redis
-  ```
+- **pip** `pip install fastapi-cachekit[redis]`
+- **uv** `uv add fastapi-cachekit[redis]`
+- **poetry** `poetry add fastapi-cachekit -E redis`
+  
 
 ### **Postgres Backend**
 
-- **pip**
-  ```
-  pip install fastapi-cachekit[postgres]
-  ```
-- **uv**
-  ```
-  uv add fastapi-cachekit[postgres]
-  ```
-- **poetry**
-  ```
-  poetry add fastapi-cachekit -E postgres
-  ```
+- **pip** `pip install fastapi-cachekit[postgres]`
+- **uv** `uv add fastapi-cachekit[postgres]`
+- **poetry** `poetry add fastapi-cachekit -E postgres`
+  
 
 ### **Memcached Backend**
 
-- **pip**
-  ```
-  pip install fastapi-cachekit[memcached]
-  ```
-- **uv**
-  ```
-  uv add fastapi-cachekit[memcached]
-  ```
-- **poetry**
-  ```
-  poetry add fastapi-cachekit -E memcached
-  ```
+- **pip** `pip install fastapi-cachekit[memcached]`
+- **uv** `uv add fastapi-cachekit[memcached]`
+- **poetry** `poetry add fastapi-cachekit -E memcached`
 
+
+### **MongoDB Backend**
+
+- **pip** `pip install fastapi-cachekit[mongodb]`
+- **uv** `uv add fastapi-cachekit[mongodb]`
+- **poetry** `poetry add fastapi-cachekit -E mongodb`
 ---
 
 ## 🧩 Install All Backends
 
 If you want to install all supported backends at once:
 
-- **pip**
-  ```
-  pip install fastapi-cachekit[all]
-  ```
-- **uv**
-  ```
-  uv add fastapi-cachekit[all]
-  ```
-- **poetry**
-  ```
-  poetry add fastapi-cachekit -E all
-  ```
+- **pip** `pip install fastapi-cachekit[all]`
+  
+- **uv** `uv add fastapi-cachekit[all]`
+  
+- **poetry** `poetry add fastapi-cachekit -E all `
 
 ---
 

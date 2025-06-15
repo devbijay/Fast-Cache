@@ -6,12 +6,13 @@ FastAPI Cachekit supports multiple cache backends, so you can choose the best fi
 
 ## Supported Backends
 
-| Backend            | Description                                      | Best For                | Docs                |
-|--------------------|--------------------------------------------------|-------------------------|---------------------|
-| InMemoryBackend    | Stores cache in the app’s memory (LRU support)   | Development, testing    | [In-Memory](backends/in_memory.md) |
-| RedisBackend       | Uses Redis for distributed, production caching    | Production, scaling     | [Redis](backends/redis.md)         |
-| PostgresBackend    | Uses PostgreSQL for persistent SQL-based caching  | Data persistence, SQL   | [Postgres](backends/postgres.md)   |
-| MemcachedBackend   | Uses Memcached for high-speed distributed caching | High-speed, stateless   | [Memcached](backends/memcached.md) |
+| Backend          | Description                                      | Best For                | Docs                               |
+|------------------|--------------------------------------------------|-------------------------|------------------------------------|
+| InMemoryBackend  | Stores cache in the app’s memory (LRU support)   | Development, testing    | [In-Memory](backends/in_memory.md) |
+| RedisBackend     | Uses Redis for distributed, production caching    | Production, scaling     | [Redis](backends/redis.md)         |
+| PostgresBackend  | Uses PostgreSQL for persistent SQL-based caching  | Data persistence, SQL   | [Postgres](backends/postgres.md)   |
+| MemcachedBackend | Uses Memcached for high-speed distributed caching | High-speed, stateless   | [Memcached](backends/memcached.md) |
+| MongoDBBackend   | Uses Memcached for high-speed distributed caching | High-speed, stateless   | [MongoDB](backends/mongodb.md)     |
 
 ---
 
@@ -37,6 +38,11 @@ FastAPI Cachekit supports multiple cache backends, so you can choose the best fi
   - 🔴 No persistence (data lost on restart).
   - 🔴 No built-in authentication by default.
 
+- **MongoDBBackend**
+  - 🟢 Persistent storage (data survives restarts).
+  - 🟢 Built-in TTL index for automatic cache expiration.
+  - 🟢 Supports authentication and access control.
+  - 🟡 Slower than in-memory caches (e.g., Memcached).
 ---
 
 ## Installation for Each Backend
@@ -51,6 +57,7 @@ See the [Installation Guide](installation.md) for details on installing optional
 - [Redis Backend](backends/redis.md)
 - [Postgres Backend](backends/postgres.md)
 - [Memcached Backend](backends/memcached.md)
+- [MongoDB Backend](backends/mongodb.md)
 
 ---
 
