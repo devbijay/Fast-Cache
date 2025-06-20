@@ -3,6 +3,7 @@ from typing import Any, Optional, Union, Mapping
 from datetime import timedelta
 from .backend import CacheBackend
 
+
 class MemcachedBackend(CacheBackend):
     """
     Memcached cache backend with both sync and async support.
@@ -56,8 +57,14 @@ class MemcachedBackend(CacheBackend):
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         try:
-            exptime = int(expire.total_seconds()) if isinstance(expire, timedelta) else (expire or 0)
-            self._sync_client.set(self._make_key(key), pickle.dumps(value), expire=exptime)
+            exptime = (
+                int(expire.total_seconds())
+                if isinstance(expire, timedelta)
+                else (expire or 0)
+            )
+            self._sync_client.set(
+                self._make_key(key), pickle.dumps(value), expire=exptime
+            )
         except Exception:
             pass
 
@@ -80,7 +87,6 @@ class MemcachedBackend(CacheBackend):
         except Exception:
             return False
 
-
     async def aget(self, key: str) -> Optional[Any]:
         try:
             value = await self._async_client.get(self._make_key(key))
@@ -92,8 +98,14 @@ class MemcachedBackend(CacheBackend):
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         try:
-            exptime = int(expire.total_seconds()) if isinstance(expire, timedelta) else (expire or 0)
-            await self._async_client.set(self._make_key(key), pickle.dumps(value), exptime=exptime)
+            exptime = (
+                int(expire.total_seconds())
+                if isinstance(expire, timedelta)
+                else (expire or 0)
+            )
+            await self._async_client.set(
+                self._make_key(key), pickle.dumps(value), exptime=exptime
+            )
         except Exception:
             pass
 
@@ -103,13 +115,11 @@ class MemcachedBackend(CacheBackend):
         except Exception:
             pass
 
-
     async def aclear(self) -> None:
         try:
             await self._async_client.flush_all()
         except Exception:
             pass
-
 
     async def ahas(self, key: str) -> bool:
         try:

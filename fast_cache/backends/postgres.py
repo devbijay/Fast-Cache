@@ -10,6 +10,7 @@ def _validate_namespace(namespace: str) -> str:
         raise ValueError("Invalid namespace: only alphanumeric and underscore allowed")
     return namespace
 
+
 class PostgresBackend(CacheBackend):
     """
     PostgreSQL cache backend implementation.
@@ -74,20 +75,14 @@ class PostgresBackend(CacheBackend):
         return f"{self._namespace}:{key}"
 
     def _is_expired(self, expire_at: Optional[datetime]) -> bool:
-        return expire_at is not None and expire_at < datetime.now(
-            timezone.utc
-        )
+        return expire_at is not None and expire_at < datetime.now(timezone.utc)
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         expire_at = None
         if expire:
-            delta = (
-                timedelta(seconds=expire)
-                if isinstance(expire, int)
-                else expire
-            )
+            delta = timedelta(seconds=expire) if isinstance(expire, int) else expire
             expire_at = datetime.now(timezone.utc) + delta
 
         with self._sync_pool.connection() as conn:
@@ -155,17 +150,12 @@ class PostgresBackend(CacheBackend):
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
-
         if not self._async_pool._opened:
             await self._async_pool.open()
 
         expire_at = None
         if expire:
-            delta = (
-                timedelta(seconds=expire)
-                if isinstance(expire, int)
-                else expire
-            )
+            delta = timedelta(seconds=expire) if isinstance(expire, int) else expire
             expire_at = datetime.now(timezone.utc) + delta
 
         async with self._async_pool.connection() as conn:

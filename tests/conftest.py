@@ -26,15 +26,18 @@ except ImportError:
 
 try:
     from fast_cache import PostgresBackend
+
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
 
 try:
     from fast_cache import MemcachedBackend
+
     MEMCACHED_AVAILABLE = True
 except ImportError:
     MEMCACHED_AVAILABLE = False
+
 
 @pytest.fixture
 def in_memory_cache():
@@ -49,6 +52,7 @@ def in_memory_cache():
 def redis_container():
     with RedisContainer() as container:
         yield container
+
 
 @pytest.fixture(scope="session")
 def redis_url(redis_container):
@@ -68,11 +72,11 @@ def redis_cache(redis_url):
     cache.clear()
 
 
-
 @pytest.fixture(scope="session")
 def postgres_container():
     with PostgresContainer() as container:
         yield container
+
 
 @pytest.fixture(scope="session")
 def postgres_dsn(postgres_container) -> str:
@@ -103,17 +107,18 @@ async def async_postgres_cache(postgres_dsn: str) -> PostgresBackend:
         await backend.close()
 
 
-
 @pytest.fixture(scope="session")
 def memcached_container():
     with MemcachedContainer() as container:
         yield container
+
 
 @pytest.fixture(scope="session")
 def memcached_url(memcached_container):
     host = memcached_container.get_container_host_ip()
     port = int(memcached_container.get_exposed_port(11211))
     return host, port
+
 
 @pytest.fixture
 def memcached_cache(memcached_url):
@@ -124,12 +129,15 @@ def memcached_cache(memcached_url):
     yield backend
     backend.clear()
 
+
 @pytest.fixture(scope="session")
 def mongo_url():
-    with MongoDbContainer(username='test', password='test', dbname='testdb') as container:
+    with MongoDbContainer(
+        username="test", password="test", dbname="testdb"
+    ) as container:
         db_url = container.get_connection_url()
         # Always add authSource to be explicit
-        if not db_url.endswith('/testdb'):
+        if not db_url.endswith("/testdb"):
             db_url = f"{db_url}/testdb"
         if "authSource" not in db_url:
             db_url = f"{db_url}?authSource=admin"

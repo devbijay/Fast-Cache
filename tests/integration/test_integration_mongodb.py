@@ -10,9 +10,11 @@ from fast_cache import MongoDBBackend, cache
 
 @pytest.fixture
 def client():
-    with MongoDbContainer(username='test', password='test', dbname='testdb') as container:
+    with MongoDbContainer(
+        username="test", password="test", dbname="testdb"
+    ) as container:
         db_url = container.get_connection_url()
-        if not db_url.endswith('/testdb'):
+        if not db_url.endswith("/testdb"):
             db_url = f"{db_url}/testdb"
         if "authSource" not in db_url:
             db_url = f"{db_url}?authSource=admin"
@@ -21,7 +23,6 @@ def client():
         cache.init_app(app=app, backend=backend, default_expire=120)
         with TestClient(app) as c:
             yield c
-
 
 
 def test_decorator_async_cache(client):

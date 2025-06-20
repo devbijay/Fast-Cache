@@ -4,6 +4,7 @@ from typing import Any, Optional, Union
 from datetime import timedelta
 from .backend import CacheBackend
 
+
 class MongoDBBackend(CacheBackend):
     """
     MongoDB cache backend with both sync and async support.
@@ -18,11 +19,7 @@ class MongoDBBackend(CacheBackend):
     but expiration is also checked in code to avoid returning stale data.
     """
 
-    def __init__(
-        self,
-        uri: str,
-        namespace: Optional[str] = "fastapi_cache"
-    ) -> None:
+    def __init__(self, uri: str, namespace: Optional[str] = "fastapi_cache") -> None:
         """
         Initialize the MongoDB backend.
 
@@ -80,10 +77,7 @@ class MongoDBBackend(CacheBackend):
         return None
 
     def set(
-        self,
-        key: str,
-        value: Any,
-        expire: Optional[Union[int, timedelta]] = None
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         """
         Synchronously set a value in the cache.
@@ -150,10 +144,7 @@ class MongoDBBackend(CacheBackend):
         return None
 
     async def aset(
-        self,
-        key: str,
-        value: Any,
-        expire: Optional[Union[int, timedelta]] = None
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         """
         Asynchronously set a value in the cache.
@@ -173,9 +164,7 @@ class MongoDBBackend(CacheBackend):
             update["expires_at"] = exptime
 
         await self._async_collection.update_one(
-            {"_id": self._make_key(key)},
-            {"$set": update},
-            upsert=True
+            {"_id": self._make_key(key)}, {"$set": update}, upsert=True
         )
 
     async def adelete(self, key: str) -> None:
@@ -191,7 +180,9 @@ class MongoDBBackend(CacheBackend):
         """
         Asynchronously clear all values from the namespace.
         """
-        await self._async_collection.delete_many({"_id": {"$regex": f"^{self._namespace}:"}})
+        await self._async_collection.delete_many(
+            {"_id": {"$regex": f"^{self._namespace}:"}}
+        )
 
     async def ahas(self, key: str) -> bool:
         """

@@ -3,7 +3,6 @@ import asyncio
 from fast_cache import InMemoryBackend
 
 
-
 def test_set_and_get(in_memory_cache):
     in_memory_cache.set("foo", "bar")
     assert in_memory_cache.get("foo") == "bar"
