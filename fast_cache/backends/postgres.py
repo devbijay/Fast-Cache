@@ -1,3 +1,4 @@
+import asyncio
 import pickle
 import re
 from datetime import datetime, timezone, timedelta
@@ -231,3 +232,15 @@ class PostgresBackend(CacheBackend):
     async def close(self) -> None:
         self._sync_pool.close()
         await self._async_pool.close()
+
+    async def cleanup_expired(self, interval_seconds: int = 30):
+        while True:
+            if not self._async_pool._opened:
+                await self._async_pool.open()
+            async with self._async_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        f"DELETE FROM {self._table_name} WHERE expire_at IS NOT NULL AND expire_at < NOW();"
+                    )
+                    await conn.commit()
+            await asyncio.sleep(interval_seconds)
