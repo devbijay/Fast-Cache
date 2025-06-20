@@ -2,6 +2,7 @@ import asyncio
 import pickle
 import re
 from datetime import datetime, timezone, timedelta
+from functools import wraps
 from typing import Any, Optional, Union
 from .backend import CacheBackend
 
@@ -11,6 +12,23 @@ def _validate_namespace(namespace: str) -> str:
         raise ValueError("Invalid namespace: only alphanumeric and underscore allowed")
     return namespace
 
+
+def ensure_cleanup_task(method):
+    @wraps(method)
+    def sync_wrapper(self, *args, **kwargs):
+        self._ensure_cleanup_task()
+        return method(self, *args, **kwargs)
+
+    @wraps(method)
+    async def async_wrapper(self, *args, **kwargs):
+        self._ensure_cleanup_task()
+        return await method(self, *args, **kwargs)
+
+    import inspect
+    if inspect.iscoroutinefunction(method):
+        return async_wrapper
+    else:
+        return sync_wrapper
 
 class PostgresBackend(CacheBackend):
     """
@@ -25,6 +43,8 @@ class PostgresBackend(CacheBackend):
         namespace: str = "fastapi",
         min_size: int = 1,
         max_size: int = 10,
+        cleanup_interval: int = 30,
+        auto_cleanup: bool = True,
     ) -> None:
         try:
             from psycopg_pool import AsyncConnectionPool, ConnectionPool
@@ -47,12 +67,11 @@ class PostgresBackend(CacheBackend):
         )
         self._create_unlogged_table_if_not_exists()
 
-    def _validate_namespace(namespace: str) -> str:
-        if not re.match(r"^[A-Za-z0-9_]+$", namespace):
-            raise ValueError(
-                "Invalid namespace: only alphanumeric and underscore allowed"
-            )
-        return namespace
+        # Lazy cleanup task setup
+        self._cleanup_task = None
+        self._cleanup_interval = cleanup_interval
+        self._auto_cleanup = auto_cleanup
+
 
     def _create_unlogged_table_if_not_exists(self):
         """Create the cache table if it doesn't exist."""
@@ -78,14 +97,11 @@ class PostgresBackend(CacheBackend):
     def _is_expired(self, expire_at: Optional[datetime]) -> bool:
         return expire_at is not None and expire_at < datetime.now(timezone.utc)
 
+    @ensure_cleanup_task
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
-        expire_at = None
-        if expire:
-            delta = timedelta(seconds=expire) if isinstance(expire, int) else expire
-            expire_at = datetime.now(timezone.utc) + delta
-
+        expire_at = self._compute_expire_at(expire)
         with self._sync_pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -100,6 +116,7 @@ class PostgresBackend(CacheBackend):
                 )
                 conn.commit()
 
+    @ensure_cleanup_task
     def get(self, key: str) -> Optional[Any]:
         with self._sync_pool.connection() as conn:
             with conn.cursor() as cur:
@@ -148,17 +165,12 @@ class PostgresBackend(CacheBackend):
                 )
                 conn.commit()
 
+    @ensure_cleanup_task
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
-        if not self._async_pool._opened:
-            await self._async_pool.open()
-
-        expire_at = None
-        if expire:
-            delta = timedelta(seconds=expire) if isinstance(expire, int) else expire
-            expire_at = datetime.now(timezone.utc) + delta
-
+        await self._ensure_async_pool_open()
+        expire_at = self._compute_expire_at(expire)
         async with self._async_pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -173,9 +185,9 @@ class PostgresBackend(CacheBackend):
                 )
                 await conn.commit()
 
+    @ensure_cleanup_task
     async def aget(self, key: str) -> Optional[Any]:
-        if not self._async_pool._opened:
-            await self._async_pool.open()
+        await self._ensure_async_pool_open()
         async with self._async_pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -192,8 +204,7 @@ class PostgresBackend(CacheBackend):
                 return pickle.loads(value)
 
     async def adelete(self, key: str) -> None:
-        if not self._async_pool._opened:
-            await self._async_pool.open()
+        await self._ensure_async_pool_open()
         async with self._async_pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -203,8 +214,7 @@ class PostgresBackend(CacheBackend):
                 await conn.commit()
 
     async def ahas(self, key: str) -> bool:
-        if not self._async_pool._opened:
-            await self._async_pool.open()
+        await self._ensure_async_pool_open()
         async with self._async_pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -218,8 +228,7 @@ class PostgresBackend(CacheBackend):
 
     async def aclear(self) -> None:
         """Asynchronously clear all keys in the current namespace."""
-        if not self._async_pool._opened:
-            await self._async_pool.open()
+        await self._ensure_async_pool_open()
         async with self._async_pool.connection() as conn:
             async with conn.cursor() as cur:
                 # FIX: Use the dynamic table name
@@ -233,10 +242,19 @@ class PostgresBackend(CacheBackend):
         self._sync_pool.close()
         await self._async_pool.close()
 
+    def _ensure_cleanup_task(self):
+        if self._auto_cleanup and self._cleanup_task is None:
+            try:
+                loop = asyncio.get_running_loop()
+                self._cleanup_task = loop.create_task(
+                    self.cleanup_expired(self._cleanup_interval)
+                )
+            except RuntimeError:
+                pass
+
     async def cleanup_expired(self, interval_seconds: int = 30):
         while True:
-            if not self._async_pool._opened:
-                await self._async_pool.open()
+            await self._ensure_async_pool_open()
             async with self._async_pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
@@ -244,3 +262,16 @@ class PostgresBackend(CacheBackend):
                     )
                     await conn.commit()
             await asyncio.sleep(interval_seconds)
+
+    @staticmethod
+    def _compute_expire_at(
+        expire: Optional[Union[int, timedelta]],
+    ) -> Optional[datetime]:
+        if expire:
+            delta = timedelta(seconds=expire) if isinstance(expire, int) else expire
+            return datetime.now(timezone.utc) + delta
+        return None
+
+    async def _ensure_async_pool_open(self):
+        if not self._async_pool._opened:
+            await self._async_pool.open()

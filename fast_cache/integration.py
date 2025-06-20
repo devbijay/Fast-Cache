@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from typing import Optional, Callable, Union, AsyncIterator, Any
@@ -176,9 +177,21 @@ class FastAPICache:
         if not hasattr(app, "state"):
             app.state = {}
         app.state["cache"] = self
-        yield
-        self._backend = None
-        self._app = None
+
+        try:
+            yield
+        finally:
+            if self._backend:
+                close = getattr(self._backend, "aclose", None)
+                if close:
+                    await close()
+                else:
+                    close = getattr(self._backend, "close", None)
+                    if close:
+                        close()
+
+            self._backend = None
+            self._app = None
 
     def init_app(
         self,
