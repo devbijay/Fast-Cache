@@ -73,7 +73,10 @@ class MongoDBBackend(CacheBackend):
         """
         doc = self._sync_collection.find_one({"_id": self._make_key(key)})
         if doc and (doc.get("expires_at", float("inf")) > time.time()):
-            return pickle.loads(doc["value"])
+            try:
+                return pickle.loads(doc["value"])
+            except Exception:
+                return None
         return None
 
     def set(
@@ -89,11 +92,8 @@ class MongoDBBackend(CacheBackend):
                                                      If None, the entry never expires.
         """
         update = {"value": pickle.dumps(value)}
-        if expire is not None:
-            if isinstance(expire, timedelta):
-                exptime = int(time.time() + expire.total_seconds())
-            else:
-                exptime = int(time.time() + expire)
+        exptime = self._compute_expire_at(expire)
+        if exptime is not None:
             update["expires_at"] = exptime
 
         self._sync_collection.update_one(
@@ -140,7 +140,10 @@ class MongoDBBackend(CacheBackend):
         """
         doc = await self._async_collection.find_one({"_id": self._make_key(key)})
         if doc and (doc.get("expires_at", float("inf")) > time.time()):
-            return pickle.loads(doc["value"])
+            try:
+                return pickle.loads(doc["value"])
+            except Exception:
+                return None
         return None
 
     async def aset(
@@ -156,11 +159,8 @@ class MongoDBBackend(CacheBackend):
                                                      If None, the entry never expires.
         """
         update = {"value": pickle.dumps(value)}
-        if expire is not None:
-            if isinstance(expire, timedelta):
-                exptime = int(time.time() + expire.total_seconds())
-            else:
-                exptime = int(time.time() + expire)
+        exptime = self._compute_expire_at(expire)
+        if exptime is not None:
             update["expires_at"] = exptime
 
         await self._async_collection.update_one(
@@ -209,3 +209,12 @@ class MongoDBBackend(CacheBackend):
         """
         self._sync_client.close()
         await self._async_client.close()
+
+    @staticmethod
+    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+        if expire is not None:
+            if isinstance(expire, timedelta):
+                return int(time.time() + expire.total_seconds())
+            else:
+                return int(time.time() + expire)
+        return None
