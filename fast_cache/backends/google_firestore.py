@@ -1,11 +1,29 @@
 import asyncio
+import inspect
 import pickle
 import time
+from functools import wraps
 from typing import Any, Optional, Union
 from datetime import timedelta
 
 from .backend import CacheBackend
 
+
+def ensure_cleanup_task(method):
+    @wraps(method)
+    def sync_wrapper(self, *args, **kwargs):
+        self._ensure_cleanup_task()
+        return method(self, *args, **kwargs)
+
+    @wraps(method)
+    async def async_wrapper(self, *args, **kwargs):
+        self._ensure_cleanup_task()
+        return await method(self, *args, **kwargs)
+
+    if inspect.iscoroutinefunction(method):
+        return async_wrapper
+    else:
+        return sync_wrapper
 
 class FirestoreBackend(CacheBackend):
     """
@@ -18,6 +36,8 @@ class FirestoreBackend(CacheBackend):
         credential_path: Optional[str] = None,
         namespace: Optional[str] = "fastapi_cache",
         collection_name: Optional[str] = "cache_entries",
+        cleanup_interval: int = 30,
+        auto_cleanup: bool = True,
     ) -> None:
         """
         Initialize the Firestore backend.
@@ -43,6 +63,10 @@ class FirestoreBackend(CacheBackend):
         self._namespace = namespace or "cache"
         self._collection_name = collection_name or "cache_entries"
 
+        self._cleanup_task = None
+        self._cleanup_interval = cleanup_interval
+        self._auto_cleanup = auto_cleanup
+
         if credential_path:
             # Explicitly load credentials from the provided path
             credentials = service_account.Credentials.from_service_account_file(
@@ -55,7 +79,14 @@ class FirestoreBackend(CacheBackend):
             self._sync_db: Client = firestore.Client()
             self._async_db: AsyncClient = firestore.AsyncClient()
 
-
+    @staticmethod
+    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+        if expire is not None:
+            if isinstance(expire, timedelta):
+                return int(time.time() + expire.total_seconds())
+            else:
+                return int(time.time() + expire)
+        return None
 
     def _make_key(self, key: str) -> str:
         """
@@ -85,6 +116,7 @@ class FirestoreBackend(CacheBackend):
         """
         return expires_at is not None and expires_at < time.time()
 
+    @ensure_cleanup_task
     def get(self, key: str) -> Optional[Any]:
         """
         Synchronously retrieve a value from the cache.
@@ -108,6 +140,7 @@ class FirestoreBackend(CacheBackend):
                     return None
         return None
 
+    @ensure_cleanup_task
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
@@ -124,11 +157,8 @@ class FirestoreBackend(CacheBackend):
             self._make_key(key)
         )
         data = {"value": pickle.dumps(value)}
-        if expire is not None:
-            if isinstance(expire, timedelta):
-                exptime = int(time.time() + expire.total_seconds())
-            else:
-                exptime = int(time.time() + expire)
+        exptime = self._compute_expire_at(expire)
+        if exptime is not None:
             data["expires_at"] = exptime
 
         doc_ref.set(data)
@@ -175,6 +205,7 @@ class FirestoreBackend(CacheBackend):
             return not self._is_expired(data.get("expires_at"))
         return False
 
+    @ensure_cleanup_task
     async def aget(self, key: str) -> Optional[Any]:
         """
         Asynchronously retrieve a value from the cache.
@@ -199,6 +230,7 @@ class FirestoreBackend(CacheBackend):
                     return None
         return None
 
+    @ensure_cleanup_task
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
@@ -215,11 +247,9 @@ class FirestoreBackend(CacheBackend):
             self._make_key(key)
         )
         data = {"value": pickle.dumps(value)}
+        exptime = self._compute_expire_at(expire)
+
         if expire is not None:
-            if isinstance(expire, timedelta):
-                exptime = int(time.time() + expire.total_seconds())
-            else:
-                exptime = int(time.time() + expire)
             data["expires_at"] = exptime
 
         await doc_ref.set(data)
@@ -283,6 +313,17 @@ class FirestoreBackend(CacheBackend):
             await self._async_db.close()
         except TypeError as e:
             return
+
+    def _ensure_cleanup_task(self):
+        if (
+            getattr(self, "_auto_cleanup", True)
+            and getattr(self, "_cleanup_task", None) is None
+        ):
+            try:
+                loop = asyncio.get_running_loop()
+                self._cleanup_task = loop.create_task(self.cleanup_expired(self._cleanup_interval))
+            except RuntimeError:
+                pass
 
     async def cleanup_expired(self, interval_seconds: int = 30):
         """
