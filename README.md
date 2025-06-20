@@ -11,7 +11,7 @@ A high-performance, flexible caching solution for FastAPI applications. fastapi-
 ## Features
 
 - ✅ Full async/sync support for all operations
-- ✅ Redis backend with connection pooling
+- ✅ Multiple backend Support So you can use the same tech stack as your app
 - ✅ Function result caching with decorator syntax
 - ✅ FastAPI dependency injection support
 - ✅ Namespace support for isolating cache entries
@@ -20,13 +20,14 @@ A high-performance, flexible caching solution for FastAPI applications. fastapi-
 - ✅ Expiration time support (seconds or timedelta)
 
 ## 📦 Backends & Sync/Async Support
-
-| Backend            | Sync API | Async API | Install Extra         |
-|--------------------|:--------:|:---------:|----------------------|
-| `InMemoryBackend`  |   ✅     |    ✅     | _built-in_           |
-| `RedisBackend`     |   ✅     |    ✅     | `redis`              |
-| `PostgresBackend`  |   ✅     |    ✅     | `postgres`           |
-| `MemcachedBackend` |   ✅     |    ✅     | `memcached`          |
+| Backend            | Sync API | Async API | Install Extra |
+|--------------------|:--------:|:---------:|---------------|
+| `InMemoryBackend`  |   ✅     |    ✅     | _built-in_    |
+| `RedisBackend`     |   ✅     |    ✅     | `redis`       |
+| `PostgresBackend`  |   ✅     |    ✅     | `postgres`    |
+| `MemcachedBackend` |   ✅     |    ✅     | `memcached`   |
+| `MongoDB`          |   ✅     |    ✅     | `mongodb`     |
+| `FireStore`        |   ✅     |    ✅     | `firestore`   |
 
 ---
 
@@ -50,6 +51,15 @@ pip install fastapi-cachekit[postgres]
 **With Memcached:**
 ```bash
 pip install fastapi-cachekit[memcached]
+```
+**With MongoDB:**
+```bash
+pip install fastapi-cachekit[mongodb]
+```
+
+**With FireStore:**
+```bash
+pip install fastapi-cachekit[firestore]
 ```
 
 **All backends:**

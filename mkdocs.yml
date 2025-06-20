@@ -53,6 +53,7 @@ nav:
       - Postgres: backends/postgres.md
       - Memcached: backends/memcached.md
       - MongoDB: backends/mongodb.md
+      - FireStore: backends/firestore.md
   - API Reference: api.md
 
 extra:

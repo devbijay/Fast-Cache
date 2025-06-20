@@ -47,6 +47,13 @@ You can install support for Redis, Postgres, MongoDB or Memcached by specifying 
 - **poetry** `poetry add fastapi-cachekit -E mongodb`
 ---
 
+### **FireStore Backend**
+
+- **pip** `pip install fastapi-cachekit[firestore]`
+- **uv** `uv add fastapi-cachekit[firestore]`
+- **poetry** `poetry add fastapi-cachekit -E firestore`
+---
+
 ## 🧩 Install All Backends
 
 If you want to install all supported backends at once:
