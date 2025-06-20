@@ -9,12 +9,16 @@ from examples.main import app
 from fast_cache import cache, PostgresBackend
 
 
-@pytest.fixture()
-def client(postgres_container):
+@pytest.fixture(scope="session")
+def shared_backend(postgres_container):
     db_url = postgres_container.get_connection_url(driver=None)
-    print(f"\n[TEST] Postgres connection URL: {db_url}")
     backend = PostgresBackend(db_url, namespace="integration_demo")
-    cache.init_app(app=app, backend=backend, default_expire=120)
+    yield backend
+
+
+@pytest.fixture()
+def client(shared_backend):
+    cache.init_app(app=app, backend=shared_backend, default_expire=120)
     with TestClient(app) as c:
         yield c
 
