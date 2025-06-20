@@ -1,16 +1,37 @@
 import asyncio
+import inspect
 import threading
 import time
 from collections import OrderedDict
 from datetime import timedelta
-from typing import Any, Dict, Optional, Union, Tuple
+from functools import wraps
+from typing import Any, Optional, Union, Tuple
 from .backend import CacheBackend
 
+def ensure_cleanup_task(method):
+    """
+    Decorator to ensure the background cleanup task is started
+    on first use of any public method (sync or async).
+    """
+    @wraps(method)
+    def sync_wrapper(self, *args, **kwargs):
+        self._ensure_cleanup_task()
+        return method(self, *args, **kwargs)
+
+    @wraps(method)
+    async def async_wrapper(self, *args, **kwargs):
+        self._ensure_cleanup_task()
+        return await method(self, *args, **kwargs)
+
+    if inspect.iscoroutinefunction(method):
+        return async_wrapper
+    else:
+        return sync_wrapper
 
 class InMemoryBackend(CacheBackend):
     """
-    In-memory cache backend implementation with namespace support,
-    thread/async safety, and efficient expiration cleanup.
+    In-memory cache backend with namespace support, LRU eviction,
+    thread/async safety, and efficient background expiration cleanup.
 
     Attributes:
         _namespace (str): Namespace prefix for all keys.
@@ -89,19 +110,6 @@ class InMemoryBackend(CacheBackend):
             while len(self._cache) > self._max_size:
                 self._cache.popitem(last=False)  # Remove oldest (LRU)
 
-    def _cleanup(self) -> None:
-        """
-        Remove expired items from the cache.
-        """
-        now = time.monotonic()
-        keys_to_delete = [
-            k
-            for k, (_, exp) in list(self._cache.items())
-            if exp is not None and now > exp
-        ]
-        for k in keys_to_delete:
-            self._cache.pop(k, None)
-
     async def _cleanup_expired(self) -> None:
         """
         Periodically clean up expired items in the background.
@@ -109,8 +117,28 @@ class InMemoryBackend(CacheBackend):
         while True:
             await asyncio.sleep(60)
             async with self._async_lock:
-                self._cleanup()
+                now = time.monotonic()
+                keys_to_delete = [
+                    k
+                    for k, (_, exp) in list(self._cache.items())
+                    if exp is not None and now > exp
+                ]
+                for k in keys_to_delete:
+                    self._cache.pop(k, None)
 
+    def _ensure_cleanup_task(self):
+        """
+        Ensure the background cleanup task is started (if in an event loop).
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            if self._cleanup_task is None or self._cleanup_task.done():
+                self._cleanup_task = loop.create_task(self._cleanup_expired())
+        except RuntimeError:
+            # Not in an event loop (sync context), do nothing
+            pass
+
+    @ensure_cleanup_task
     def get(self, key: str) -> Optional[Any]:
         """
         Synchronously retrieve a value from the cache.
@@ -127,12 +155,12 @@ class InMemoryBackend(CacheBackend):
             if item:
                 value, expire_time = item
                 if not self._is_expired(expire_time):
-                    # Move to end for LRU
                     self._cache.move_to_end(k)
                     return value
                 self._cache.pop(k, None)
             return None
 
+    @ensure_cleanup_task
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
@@ -150,8 +178,8 @@ class InMemoryBackend(CacheBackend):
             self._cache[k] = (value, expire_time)
             self._cache.move_to_end(k)
             self._evict_if_needed()
-            self._cleanup()
 
+    @ensure_cleanup_task
     def delete(self, key: str) -> None:
         """
         Synchronously delete a value from the cache.
@@ -163,6 +191,7 @@ class InMemoryBackend(CacheBackend):
         with self._lock:
             self._cache.pop(k, None)
 
+    @ensure_cleanup_task
     def clear(self) -> None:
         """
         Synchronously clear all values from the cache.
@@ -173,6 +202,7 @@ class InMemoryBackend(CacheBackend):
             for k in keys_to_delete:
                 self._cache.pop(k, None)
 
+    @ensure_cleanup_task
     def has(self, key: str) -> bool:
         """
         Synchronously check if a key exists in the cache.
@@ -194,6 +224,7 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return False
 
+    @ensure_cleanup_task
     async def aget(self, key: str) -> Optional[Any]:
         """
         Asynchronously retrieve a value from the cache.
@@ -215,6 +246,7 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return None
 
+    @ensure_cleanup_task
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
@@ -232,11 +264,8 @@ class InMemoryBackend(CacheBackend):
             self._cache[k] = (value, expire_time)
             self._cache.move_to_end(k)
             self._evict_if_needed()
-            self._cleanup()
-            # Start cleanup task if not already running
-            if self._cleanup_task is None or self._cleanup_task.done():
-                self._cleanup_task = asyncio.create_task(self._cleanup_expired())
 
+    @ensure_cleanup_task
     async def adelete(self, key: str) -> None:
         """
         Asynchronously delete a value from the cache.
@@ -248,6 +277,7 @@ class InMemoryBackend(CacheBackend):
         async with self._async_lock:
             self._cache.pop(k, None)
 
+    @ensure_cleanup_task
     async def aclear(self) -> None:
         """
         Asynchronously clear all values from the cache.
@@ -258,6 +288,7 @@ class InMemoryBackend(CacheBackend):
             for k in keys_to_delete:
                 self._cache.pop(k, None)
 
+    @ensure_cleanup_task
     async def ahas(self, key: str) -> bool:
         """
         Asynchronously check if a key exists in the cache.
@@ -279,13 +310,9 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return False
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """
-        Asynchronously close the backend and cancel the cleanup task if running.
+        Synchronously close the backend and cancel the cleanup task if running.
         """
         if self._cleanup_task and not self._cleanup_task.done():
             self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
