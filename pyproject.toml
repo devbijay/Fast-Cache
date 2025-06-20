@@ -66,12 +66,16 @@ memcached = [
 mongodb = [
     "pymongo[snappy,gssapi,srv]>=4.6.0"
 ]
+firestore = [
+    'google-cloud-firestore>=2.3.0'
+]
 all = [
     "redis>=4.2.0",
     "psycopg[pool]>=3.2.9",
     "aiomcache>=0.8.1",
     "pymemcache>=4.0.0",
-    "pymongo[snappy,gssapi,srv]>=4.6.0"
+    "pymongo[snappy,gssapi,srv]>=4.6.0",
+    'google-cloud-firestore>=2.3.0'
 ]
 
 [dependency-groups]
