@@ -28,6 +28,7 @@ A high-performance, flexible caching solution for FastAPI applications. fastapi-
 | `MemcachedBackend` |   ✅     |    ✅     | `memcached`   |
 | `MongoDB`          |   ✅     |    ✅     | `mongodb`     |
 | `FireStore`        |   ✅     |    ✅     | `firestore`   |
+| `DynamoDBBackend`  |   ✅     |    ✅     | `dynamodb`    |
 
 ---
 
@@ -60,6 +61,11 @@ pip install fastapi-cachekit[mongodb]
 **With FireStore:**
 ```bash
 pip install fastapi-cachekit[firestore]
+```
+
+**With DynamoDB:**
+```bash
+pip install fastapi-cachekit[dynamodb]
 ```
 
 **All backends:**
