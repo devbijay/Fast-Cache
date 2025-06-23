@@ -54,6 +54,7 @@ nav:
       - Memcached: backends/memcached.md
       - MongoDB: backends/mongodb.md
       - FireStore: backends/firestore.md
+      - DynamoDB: backends/dynamodb.md
   - API Reference: api.md
 
 extra:
@@ -84,3 +85,8 @@ plugins:
         python:
           options:
             docstring_style: google
+            show_source: true
+            show_signature: true
+            show_root_heading: true
+            extra:
+              follow_wrapped: true

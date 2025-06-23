@@ -26,6 +26,8 @@
       show_source: true
       show_signature: true
       show_root_heading: true
+
+
 ::: fast_cache.MemcachedBackend
     options:
       show_source: true
@@ -40,6 +42,12 @@
       show_root_heading: true
 
 ::: fast_cache.FirestoreBackend
+    options:
+      show_source: true
+      show_signature: true
+      show_root_heading: true
+
+::: fast_cache.DynamoDBBackend
     options:
       show_source: true
       show_signature: true

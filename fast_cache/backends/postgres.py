@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import pickle
 import re
 from datetime import datetime, timezone, timedelta
@@ -14,21 +15,17 @@ def _validate_namespace(namespace: str) -> str:
 
 
 def ensure_cleanup_task(method):
-    @wraps(method)
-    def sync_wrapper(self, *args, **kwargs):
-        self._ensure_cleanup_task()
-        return method(self, *args, **kwargs)
-
-    @wraps(method)
-    async def async_wrapper(self, *args, **kwargs):
-        self._ensure_cleanup_task()
-        return await method(self, *args, **kwargs)
-
-    import inspect
     if inspect.iscoroutinefunction(method):
-        return async_wrapper
+        @wraps(method)
+        async def wrapper(self, *args, **kwargs):
+            self._ensure_cleanup_task()
+            return await method(self, *args, **kwargs)
     else:
-        return sync_wrapper
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            self._ensure_cleanup_task()
+            return method(self, *args, **kwargs)
+    return wrapper
 
 class PostgresBackend(CacheBackend):
     """

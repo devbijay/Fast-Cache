@@ -17,7 +17,8 @@ Install the core package (in-memory backend only):
 
 ## 🔌 Optional Backends
 
-You can install support for Redis, Postgres, MongoDB or Memcached by specifying the appropriate "extra".
+You can install support for Redis, Postgres, MongoDB, Memcached, Firestore, DynamoDB
+by specifying the appropriate "extra".
 
 ### **Redis Backend**
 
@@ -54,6 +55,12 @@ You can install support for Redis, Postgres, MongoDB or Memcached by specifying 
 - **poetry** `poetry add fastapi-cachekit -E firestore`
 ---
 
+### **DynamoDB Backend**
+
+- **pip** `pip install fastapi-cachekit[dynamodb]`
+- **uv** `uv add fastapi-cachekit[dynamodb]`
+- **poetry** `poetry add fastapi-cachekit -E dynamodb`
+---
 ## 🧩 Install All Backends
 
 If you want to install all supported backends at once:
