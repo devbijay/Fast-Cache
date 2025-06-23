@@ -5,6 +5,7 @@ import pytest
 import os
 
 import pytest_asyncio
+from testcontainers.core.container import DockerContainer
 from testcontainers.memcached import MemcachedContainer
 from testcontainers.mongodb import MongoDbContainer
 from testcontainers.redis import RedisContainer
@@ -143,3 +144,26 @@ def mongo_url():
             db_url = f"{db_url}?authSource=admin"
         print(f"\n[TEST] MongoDB URL: {db_url}")
         yield db_url
+
+
+@pytest.fixture(scope="session")
+def dynamodb_container():
+    """DynamoDB Local container for testing."""
+    container = DockerContainer("amazon/dynamodb-local:latest")
+    container.with_exposed_ports(8000)
+    container.with_command(["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"])
+
+    with container:
+        # Simple sleep - DynamoDB Local starts quickly
+        import time
+
+        time.sleep(2)
+        yield container
+
+
+@pytest.fixture(scope="session")
+def dynamodb_endpoint(dynamodb_container):
+    """Get DynamoDB Local endpoint URL."""
+    host = dynamodb_container.get_container_host_ip()
+    port = dynamodb_container.get_exposed_port(8000)
+    return f"http://{host}:{port}"

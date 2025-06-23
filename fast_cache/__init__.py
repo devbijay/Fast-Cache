@@ -7,6 +7,7 @@ from .backends.postgres import PostgresBackend
 from .backends.memcached import MemcachedBackend
 from .backends.mongodb import MongoDBBackend
 from .backends.google_firestore import FirestoreBackend
+from .backends.dynamodb import DynamoDBBackend
 
 __all__ = [
     "FastAPICache",
@@ -17,7 +18,8 @@ __all__ = [
     "cache",
     "MemcachedBackend",
     "MongoDBBackend",
-    "FirestoreBackend"
+    "FirestoreBackend",
+    "DynamoDBBackend"
 ]
 
 
