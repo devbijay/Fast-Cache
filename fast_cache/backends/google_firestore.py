@@ -1,34 +1,43 @@
-import asyncio
-import inspect
 import pickle
+import threading
 import time
-from functools import wraps
 from typing import Any, Optional, Union
 from datetime import timedelta
+
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from .backend import CacheBackend
 
 
-def ensure_cleanup_task(method):
-    @wraps(method)
-    def sync_wrapper(self, *args, **kwargs):
-        self._ensure_cleanup_task()
-        return method(self, *args, **kwargs)
-
-    @wraps(method)
-    async def async_wrapper(self, *args, **kwargs):
-        self._ensure_cleanup_task()
-        return await method(self, *args, **kwargs)
-
-    if inspect.iscoroutinefunction(method):
-        return async_wrapper
-    else:
-        return sync_wrapper
-
 class FirestoreBackend(CacheBackend):
     """
-    Firebase Firestore cache backend with both sync and async support.
-    Uses a 'expires_at' field for manual expiration checks.
+    Initializes a new instance of the FirestoreBackend cache.
+
+    This backend provides a cache using Google Cloud Firestore as the storage layer.
+    It supports both synchronous and asynchronous operations, manual expiration
+    management, and optional periodic cleanup of expired entries.
+
+    Args:
+        credential_path (Optional[str], optional): Path to the Firebase Admin SDK
+            credentials file. If None, uses the GOOGLE_APPLICATION_CREDENTIALS
+            environment variable. Defaults to None.
+        namespace (Optional[str], optional): Optional prefix for all cache keys.
+            Defaults to "fastapi_cache".
+        collection_name (Optional[str], optional): Name of the Firestore collection
+            to use for storing cache entries. Defaults to "cache_entries".
+        cleanup_interval (int, optional): Interval in seconds for periodic cleanup
+            of expired entries. Defaults to 30.
+        auto_cleanup (bool, optional): Whether to automatically start the cleanup
+            scheduler on initialization. Defaults to True.
+
+    Raises:
+        ImportError: If the required `google-cloud-firestore` package is not installed.
+
+    Notes:
+        - The backend uses a hashed, namespaced key for each Firestore document.
+        - Expired entries are managed via a custom `expires_at` field.
+        - Both synchronous and asynchronous Firestore clients are initialized.
+        - The cleanup scheduler can be started or stopped manually.
     """
 
     def __init__(
@@ -39,16 +48,6 @@ class FirestoreBackend(CacheBackend):
         cleanup_interval: int = 30,
         auto_cleanup: bool = True,
     ) -> None:
-        """
-        Initialize the Firestore backend.
-
-        Args:
-            credential_path (Optional[str]): Path to the Firebase Admin SDK credentials file.
-                                            If None, uses GOOGLE_APPLICATION_CREDENTIALS from env variable.
-            namespace (Optional[str]): Optional prefix for all cache keys. Defaults to "fastapi_cache".
-            collection_name (Optional[str]): Name of the Firestore collection to use. Defaults to "cache_entries".
-        """
-
         try:
             from google.oauth2 import service_account
             from google.cloud import firestore
@@ -67,6 +66,9 @@ class FirestoreBackend(CacheBackend):
         self._cleanup_interval = cleanup_interval
         self._auto_cleanup = auto_cleanup
 
+        self._scheduler = None
+        self._scheduler_lock = threading.Lock()
+
         if credential_path:
             # Explicitly load credentials from the provided path
             credentials = service_account.Credentials.from_service_account_file(
@@ -79,8 +81,26 @@ class FirestoreBackend(CacheBackend):
             self._sync_db: Client = firestore.Client()
             self._async_db: AsyncClient = firestore.AsyncClient()
 
+        if self._auto_cleanup:
+            self._start_cleanup_scheduler()
+
     @staticmethod
     def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+        """
+        Computes the expiration timestamp for a cache entry.
+
+        Args:
+            expire (Optional[Union[int, timedelta]]): The expiration time, either as
+                an integer (seconds) or a timedelta. If None, the entry does not expire.
+
+        Returns:
+            Optional[int]: The expiration time as a Unix epoch timestamp in seconds,
+            or None if no expiration is set.
+
+        Notes:
+            - Used internally by set/aset methods.
+            - Uses the current system time.
+        """
         if expire is not None:
             if isinstance(expire, timedelta):
                 return int(time.time() + expire.total_seconds())
@@ -90,14 +110,22 @@ class FirestoreBackend(CacheBackend):
 
     def _make_key(self, key: str) -> str:
         """
-        Create a namespaced cache key.
+        Creates a namespaced, hashed cache key suitable for Firestore document IDs.
+
+        Firestore document IDs have character and length restrictions, so this method
+        applies SHA-256 hashing to the namespaced key.
 
         Args:
             key (str): The original cache key.
 
         Returns:
-            str: The namespaced cache key.
+            str: The hashed, namespaced cache key.
+
+        Notes:
+            - All cache operations use hashed, namespaced keys internally.
+            - Prevents key collisions and ensures Firestore compatibility.
         """
+
         # Firestore document IDs have limitations, using safe encoding
         import hashlib
 
@@ -106,26 +134,37 @@ class FirestoreBackend(CacheBackend):
 
     def _is_expired(self, expires_at: Optional[int]) -> bool:
         """
-        Check if an entry has expired.
+        Checks if a cache entry is expired.
 
         Args:
-            expires_at (Optional[int]): The expiration time in epoch seconds.
+            expires_at (Optional[int]): The expiration time as a Unix epoch timestamp in seconds.
 
         Returns:
             bool: True if the entry is expired, False otherwise.
+
+        Notes:
+            - If expires_at is None, the entry does not expire.
+            - Uses the current system time.
         """
         return expires_at is not None and expires_at < time.time()
 
-    @ensure_cleanup_task
     def get(self, key: str) -> Optional[Any]:
         """
-        Synchronously retrieve a value from the cache.
+        Synchronously retrieves a value from the cache by key.
+
+        If the key does not exist or the entry has expired, returns None. If the
+        entry is expired, it is not automatically deleted.
 
         Args:
-            key (str): The cache key.
+            key (str): The cache key to retrieve.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found or expired.
+            Optional[Any]: The cached Python object, or None if not found or expired.
+
+        Notes:
+            - The value is deserialized using pickle.
+            - Handles deserialization errors gracefully.
+            - Thread-safe for Firestore client.
         """
         doc_ref = self._sync_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -140,18 +179,26 @@ class FirestoreBackend(CacheBackend):
                     return None
         return None
 
-    @ensure_cleanup_task
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         """
-        Synchronously set a value in the cache.
+        Synchronously stores a value in the cache under the specified key.
+
+        If the key already exists, its value and expiration time are updated.
+        Optionally, an expiration time can be set, after which the entry will be
+        considered expired and eligible for deletion.
 
         Args:
-            key (str): The cache key.
-            value (Any): The value to cache.
-            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
-                                                     If None, the entry never expires (or relies on Firestore's max TTL).
+            key (str): The cache key to store the value under.
+            value (Any): The Python object to cache.
+            expire (Optional[Union[int, timedelta]], optional): The expiration time
+                for the cache entry. Can be specified as an integer (seconds) or a
+                timedelta. If None, the entry does not expire.
+
+        Notes:
+            - The value is serialized using pickle.
+            - Thread-safe for Firestore client.
         """
         doc_ref = self._sync_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -165,10 +212,16 @@ class FirestoreBackend(CacheBackend):
 
     def delete(self, key: str) -> None:
         """
-        Synchronously delete a value from the cache.
+        Synchronously deletes a cache entry by key.
+
+        If the key does not exist, this method does nothing.
 
         Args:
-            key (str): The cache key.
+            key (str): The cache key to delete.
+
+        Notes:
+            - Thread-safe for Firestore client.
+            - The key is automatically namespaced and hashed.
         """
         doc_ref = self._sync_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -177,10 +230,16 @@ class FirestoreBackend(CacheBackend):
 
     def clear(self) -> None:
         """
-        Synchronously clear all values from the namespace.
-        Note: Firestore doesn't have direct namespace-based clearing.
-        This implementation will delete all documents in the collection.
-        Consider adding a query based on a namespaced field if needed.
+        Synchronously removes all cache entries in the collection.
+
+        This method deletes all documents in the configured Firestore collection.
+        Note that Firestore does not support direct namespace-based clearing, so
+        all entries in the collection are removed.
+
+        Notes:
+            - Thread-safe for Firestore client.
+            - This operation can be expensive if the collection is large.
+            - For more granular clearing, consider adding a namespace field to documents.
         """
         docs = self._sync_db.collection(self._collection_name).stream()
         for doc in docs:
@@ -188,13 +247,17 @@ class FirestoreBackend(CacheBackend):
 
     def has(self, key: str) -> bool:
         """
-        Synchronously check if a key exists in the cache and is not expired.
+        Synchronously checks if a cache key exists and is not expired.
 
         Args:
-            key (str): The cache key.
+            key (str): The cache key to check.
 
         Returns:
             bool: True if the key exists and is not expired, False otherwise.
+
+        Notes:
+            - Thread-safe for Firestore client.
+            - Expired entries are not considered present.
         """
         doc_ref = self._sync_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -205,16 +268,23 @@ class FirestoreBackend(CacheBackend):
             return not self._is_expired(data.get("expires_at"))
         return False
 
-    @ensure_cleanup_task
     async def aget(self, key: str) -> Optional[Any]:
         """
-        Asynchronously retrieve a value from the cache.
+        Asynchronously retrieves a value from the cache by key.
+
+        If the key does not exist or the entry has expired, returns None. If the
+        entry is expired, it is not automatically deleted.
 
         Args:
-            key (str): The cache key.
+            key (str): The cache key to retrieve.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found or expired.
+            Optional[Any]: The cached Python object, or None if not found or expired.
+
+        Notes:
+            - The value is deserialized using pickle.
+            - Handles deserialization errors gracefully.
+            - Asyncio-safe for Firestore client.
         """
         doc_ref = self._async_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -230,18 +300,26 @@ class FirestoreBackend(CacheBackend):
                     return None
         return None
 
-    @ensure_cleanup_task
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         """
-        Asynchronously set a value in the cache.
+        Asynchronously stores a value in the cache under the specified key.
+
+        If the key already exists, its value and expiration time are updated.
+        Optionally, an expiration time can be set, after which the entry will be
+        considered expired and eligible for deletion.
 
         Args:
-            key (str): The cache key.
-            value (Any): The value to cache.
-            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
-                                                     If None, the entry never expires (or relies on Firestore's max TTL).
+            key (str): The cache key to store the value under.
+            value (Any): The Python object to cache.
+            expire (Optional[Union[int, timedelta]], optional): The expiration time
+                for the cache entry. Can be specified as an integer (seconds) or a
+                timedelta. If None, the entry does not expire.
+
+        Notes:
+            - The value is serialized using pickle.
+            - Asyncio-safe for Firestore client.
         """
         doc_ref = self._async_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -256,10 +334,16 @@ class FirestoreBackend(CacheBackend):
 
     async def adelete(self, key: str) -> None:
         """
-        Asynchronously delete a value from the cache.
+        Asynchronously deletes a cache entry by key.
+
+        If the key does not exist, this method does nothing.
 
         Args:
-            key (str): The cache key.
+            key (str): The cache key to delete.
+
+        Notes:
+            - Asyncio-safe for Firestore client.
+            - The key is automatically namespaced and hashed.
         """
         doc_ref = self._async_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -268,10 +352,16 @@ class FirestoreBackend(CacheBackend):
 
     async def aclear(self) -> None:
         """
-        Asynchronously clear all values from the namespace.
-        Note: Firestore doesn't have direct namespace-based clearing.
-        This implementation will delete all documents in the collection.
-        Consider adding a query based on a namespaced field if needed.
+        Asynchronously removes all cache entries in the collection.
+
+        This method deletes all documents in the configured Firestore collection.
+        Note that Firestore does not support direct namespace-based clearing, so
+        all entries in the collection are removed.
+
+        Notes:
+            - Asyncio-safe for Firestore client.
+            - This operation can be expensive if the collection is large.
+            - For more granular clearing, consider adding a namespace field to documents.
         """
         docs = self._async_db.collection(self._collection_name).stream()
         async for doc in docs:
@@ -279,13 +369,17 @@ class FirestoreBackend(CacheBackend):
 
     async def ahas(self, key: str) -> bool:
         """
-        Asynchronously check if a key exists in the cache and is not expired.
+        Asynchronously checks if a cache key exists and is not expired.
 
         Args:
-            key (str): The cache key.
+            key (str): The cache key to check.
 
         Returns:
             bool: True if the key exists and is not expired, False otherwise.
+
+        Notes:
+            - Asyncio-safe for Firestore client.
+            - Expired entries are not considered present.
         """
         doc_ref = self._async_db.collection(self._collection_name).document(
             self._make_key(key)
@@ -298,54 +392,114 @@ class FirestoreBackend(CacheBackend):
 
     def close(self) -> None:
         """
-        Close the synchronous Firestore client.
+        Closes the synchronous Firestore client and stops the cleanup scheduler.
+
+        This method should be called when the backend is no longer needed to ensure
+        all resources are released and background jobs are stopped.
+
+        Notes:
+            - After calling this method, the synchronous client is closed and cannot be used.
+            - The background cleanup scheduler is stopped.
         """
+        self._stop_cleanup_scheduler()
         try:
             self._sync_db.close()
-        except TypeError as e:
+        except TypeError:
             return
 
     async def aclose(self) -> None:
         """
-        Close the asynchronous Firestore client.
+        Closes the asynchronous Firestore client and stops the cleanup scheduler.
+
+        This method should be called when the backend is no longer needed to ensure
+        all resources are released and background jobs are stopped.
+
+        Notes:
+            - After calling this method, the asynchronous client is closed and cannot be used.
+            - The background cleanup scheduler is stopped.
         """
+        self._stop_cleanup_scheduler()
         try:
             await self._async_db.close()
-        except TypeError as e:
+        except TypeError:
             return
 
-    def _ensure_cleanup_task(self):
-        if (
-            getattr(self, "_auto_cleanup", True)
-            and getattr(self, "_cleanup_task", None) is None
-        ):
-            try:
-                loop = asyncio.get_running_loop()
-                self._cleanup_task = loop.create_task(self.cleanup_expired(self._cleanup_interval))
-            except RuntimeError:
-                pass
+    def _start_cleanup_scheduler(self):
+        """
+        Starts the background scheduler for periodic cleanup of expired cache entries.
 
-    async def cleanup_expired(self, interval_seconds: int = 30):
+        This method launches a background job that periodically deletes expired
+        cache entries from the Firestore collection. If the scheduler is already running,
+        this method does nothing.
+
+        Thread-safe: uses a lock to prevent concurrent scheduler starts.
+
+        Notes:
+            - The cleanup interval is determined by the `cleanup_interval` parameter
+              provided during initialization.
+            - The scheduler runs in a background thread and does not block main
+              application execution.
+            - The scheduler is started automatically on initialization if `auto_cleanup` is True.
         """
-        Periodically delete expired cache entries.
-        Should be run as a background task.
-        Args:
-            interval_seconds (int): How often to run cleanup (default: 1 hour)
-        """
-        while True:
-            now = int(time.time())
-            expired_query = self._async_db.collection(self._collection_name).where(
-                "expires_at", "<", now
+        with self._scheduler_lock:
+            if self._scheduler is not None:
+                return
+            self._scheduler = BackgroundScheduler()
+            self._scheduler.add_job(
+                self._run_cleanup_job,
+                "interval",
+                seconds=self._cleanup_interval,
+                id="cache_cleanup",
+                max_instances=1,
             )
-            batch = self._async_db.batch()
-            count = 0
-            async for doc in expired_query.stream():
-                batch.delete(doc.reference)
-                count += 1
-                if count == 500:
-                    await batch.commit()
-                    batch = self._async_db.batch()
-                    count = 0
-            if count > 0:
-                await batch.commit()
-            await asyncio.sleep(interval_seconds)
+            self._scheduler.start()
+
+    def _stop_cleanup_scheduler(self):
+        """
+        Stops the background cleanup scheduler if it is running.
+
+        This method shuts down the background scheduler responsible for removing
+        expired cache entries. If the scheduler is not running, this method does
+        nothing.
+
+        Thread-safe: uses a lock to prevent concurrent shutdowns.
+
+        Notes:
+            - This method is called automatically when closing the backend.
+            - The scheduler is stopped without waiting for currently running jobs to finish.
+        """
+        with self._scheduler_lock:
+            if self._scheduler:
+                self._scheduler.shutdown(wait=False)
+                self._scheduler = None
+
+    def _run_cleanup_job(self):
+        """
+        Periodically deletes expired cache entries from the Firestore collection.
+
+        This method is executed by the background scheduler at regular intervals.
+        It queries for all documents with an `expires_at` field less than the current
+        time and deletes them in batches.
+
+        Notes:
+            - This method is not intended to be called directly.
+            - Uses batch deletes for efficiency (up to 500 per batch).
+            - Only entries with a non-null `expires_at` field and an expiration
+              time earlier than the current time are deleted.
+            - Thread-safe for Firestore client.
+        """
+        now = int(time.time())
+        expired_query = self._sync_db.collection(self._collection_name).where(
+            "expires_at", "<", now
+        )
+        batch = self._sync_db.batch()
+        count = 0
+        for doc in expired_query.stream():
+            batch.delete(doc.reference)
+            count += 1
+            if count == 500:
+                batch.commit()
+                batch = self._async_db.batch()
+                count = 0
+        if count > 0:
+            batch.commit()
