@@ -10,20 +10,27 @@ theme:
 
   features:
     - navigation.instant
-    - navigation.instant
+    - navigation.path
+    - navigation.instant.prefetch
+    - navigation.instant.progress
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.top
     - navigation.sections
     - navigation.expand
+    - navigation.indexes
+    - navigation.tracking
     - toc.integrate
     - search.suggest
     - search.highlight
     - content.code.copy
     - content.code.annotate
+    - content.code.select
     - content.tabs.link
     - content.action.edit
     - content.action.view
     - content.footnote.tooltips
+    - toc.follow
 
   font:
     text: Roboto
@@ -41,6 +48,15 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
 
 nav:
   - Home: index.md
@@ -84,9 +100,21 @@ plugins:
       handlers:
         python:
           options:
+            merge_init_into_class: true
+            signature_crossrefs: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            separate_signature: true
+            unwrap_annotated: true
+            members_order: source
+            preload_modules:
+              - httpx
+              - starlette
             docstring_style: google
             show_source: true
             show_signature: true
             show_root_heading: true
+            show_inheritance_diagram: true
+            show_if_no_docstring: true
             extra:
               follow_wrapped: true
