@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 import asyncio
 import time
@@ -9,7 +11,8 @@ from fast_cache import MongoDBBackend
 
 @pytest_asyncio.fixture
 async def cache(mongo_url):
-    backend = MongoDBBackend(mongo_url, namespace="my_cache")
+    unique_namespace = f"my_cache_{uuid.uuid4().hex[:8]}"
+    backend = MongoDBBackend(mongo_url, namespace=unique_namespace)
     await backend.aclear()
     yield backend
     await backend.aclear()
