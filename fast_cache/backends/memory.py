@@ -1,85 +1,169 @@
 import asyncio
-import inspect
 import threading
 import time
 from collections import OrderedDict
 from datetime import timedelta
-from functools import wraps
 from typing import Any, Optional, Union, Tuple
+
+from apscheduler.schedulers.background import BackgroundScheduler
+
 from .backend import CacheBackend
 
-def ensure_cleanup_task(method):
-    """
-    Decorator to ensure the background cleanup task is started
-    on first use of any public method (sync or async).
-    """
-    @wraps(method)
-    def sync_wrapper(self, *args, **kwargs):
-        self._ensure_cleanup_task()
-        return method(self, *args, **kwargs)
-
-    @wraps(method)
-    async def async_wrapper(self, *args, **kwargs):
-        self._ensure_cleanup_task()
-        return await method(self, *args, **kwargs)
-
-    if inspect.iscoroutinefunction(method):
-        return async_wrapper
-    else:
-        return sync_wrapper
 
 class InMemoryBackend(CacheBackend):
     """
-    In-memory cache backend with namespace support, LRU eviction,
-    thread/async safety, and efficient background expiration cleanup.
+    Initializes a new instance of the InMemoryBackend cache.
 
-    Attributes:
-        _namespace (str): Namespace prefix for all keys.
-        _cache (OrderedDict[str, Tuple[Any, Optional[float]]]): The in-memory cache store.
-        _lock (threading.Lock): Lock for thread safety.
-        _async_lock (asyncio.Lock): Lock for async safety.
-        _cleanup_task (Optional[asyncio.Task]): Background cleanup task.
-        _max_size (Optional[int]): Maximum number of items (for LRU eviction).
+    This backend provides an in-memory cache with optional LRU (Least Recently Used)
+    eviction, namespace support, thread and async safety, and automatic periodic
+    cleanup of expired items. It is suitable for single-process, multi-threaded, or
+    asyncio-based applications.
+
+    Args:
+        namespace (str, optional): A namespace prefix for all cache keys. This allows
+            multiple independent caches to share the same process. Defaults to "fastapi-cache".
+        max_size (Optional[int], optional): The maximum number of items to store in the
+            cache. If set, the cache will evict the least recently used items when the
+            limit is exceeded. If None, the cache size is unlimited. Defaults to None.
+        cleanup_interval (int, optional): The interval, in seconds, at which the
+            background cleanup job runs to remove expired cache entries. Defaults to 30.
+
+    Notes:
+        - The backend uses an OrderedDict to maintain LRU order.
+        - Both synchronous (thread-safe) and asynchronous (asyncio-safe) operations are supported.
+        - Expired items are removed automatically by a background scheduler.
+        - This backend is not suitable for multi-process or distributed environments.
     """
 
     def __init__(
-        self, namespace: str = "fastapi-cache", max_size: Optional[int] = None
+        self,
+        namespace: str = "fastapi-cache",
+        max_size: Optional[int] = None,
+        cleanup_interval: int = 30,
     ) -> None:
         """
         Initialize the in-memory cache backend.
 
         Args:
-            namespace (str): Namespace prefix for all keys (default: "fastapi-cache").
-            max_size (Optional[int]): Optional maximum number of items (LRU eviction if set).
+            namespace: Namespace prefix for all keys.
+            max_size: Optional maximum number of items (LRU eviction if set).
+            cleanup_interval: Interval in seconds for background cleanup.
         """
         self._namespace = namespace
-        self._cache: "OrderedDict[str, Tuple[Any, Optional[float]]]" = OrderedDict()
+        self._cache: OrderedDict[str, Tuple[Any, Optional[float]]] = OrderedDict()
         self._lock = threading.Lock()
         self._async_lock = asyncio.Lock()
-        self._cleanup_task: Optional[asyncio.Task] = None
         self._max_size = max_size
+        self._cleanup_interval = cleanup_interval
+
+        self._scheduler = None
+        self._scheduler_lock = threading.Lock()
+        self._start_cleanup_scheduler()
+
+    def _start_cleanup_scheduler(self):
+        """
+        Starts the background scheduler for periodic cleanup of expired cache items.
+
+        This method launches a background job that periodically deletes expired
+        cache entries from the in-memory store. If the scheduler is already running,
+        this method does nothing.
+
+        Thread-safe: uses a lock to prevent concurrent scheduler starts.
+
+        Notes:
+            - The cleanup interval is determined by the `cleanup_interval` parameter
+              provided during initialization.
+            - The scheduler runs in a background thread and does not block main
+              application execution.
+            - The scheduler is started automatically on initialization.
+        """
+        with self._scheduler_lock:
+            if self._scheduler is not None:
+                return
+            self._scheduler = BackgroundScheduler()
+            self._scheduler.add_job(
+                self._run_cleanup_job,
+                "interval",
+                seconds=self._cleanup_interval,
+                id="cache_cleanup",
+                max_instances=1,
+            )
+            self._scheduler.start()
+
+    def _stop_cleanup_scheduler(self):
+        """
+        Stops the background cleanup scheduler if it is running.
+
+        This method shuts down the background scheduler responsible for removing
+        expired cache entries. If the scheduler is not running, this method does
+        nothing.
+
+        Thread-safe: uses a lock to prevent concurrent shutdowns.
+
+        Notes:
+            - This method is called automatically when closing the backend.
+            - The scheduler is stopped without waiting for currently running jobs to finish.
+        """
+        with self._scheduler_lock:
+            if self._scheduler:
+                self._scheduler.shutdown(wait=False)
+                self._scheduler = None
+
+    def _run_cleanup_job(self):
+        """
+        Removes all expired items from the cache.
+
+        This method is executed by the background scheduler at regular intervals.
+        It iterates through all cache entries and deletes those whose expiration
+        time has passed.
+
+        Notes:
+            - This method is not intended to be called directly.
+            - Uses a monotonic clock for expiration checks.
+            - Only entries with a non-null expiration time and an expiration
+              time earlier than the current time are deleted.
+        """
+        while True:
+            now = time.monotonic()
+            keys_to_delete = [
+                k
+                for k, (_, exp) in list(self._cache.items())
+                if exp is not None and now > exp
+            ]
+            for k in keys_to_delete:
+                self._cache.pop(k, None)
 
     def _make_key(self, key: str) -> str:
         """
-        Create a namespaced cache key.
+        Creates a namespaced cache key.
+
+        This method prepends the namespace to the provided key to avoid key collisions
+        between different cache namespaces.
 
         Args:
-            key (str): The original key.
+            key (str): The original cache key.
 
         Returns:
-            str: The namespaced key.
+            str: The namespaced cache key.
+
+        Notes:
+            - All cache operations use namespaced keys internally.
         """
         return f"{self._namespace}:{key}"
 
     def _is_expired(self, expire_time: Optional[float]) -> bool:
         """
-        Check if a cache entry is expired.
+        Checks if a cache entry is expired.
 
         Args:
-            expire_time (Optional[float]): The expiration timestamp.
+            expire_time (Optional[float]): The expiration timestamp (monotonic time).
 
         Returns:
-            bool: True if expired, False otherwise.
+            bool: True if the entry is expired, False otherwise.
+
+        Notes:
+            - If expire_time is None, the entry does not expire.
+            - Uses a monotonic clock for reliable expiration checks.
         """
         if expire_time is None:
             return False
@@ -89,13 +173,18 @@ class InMemoryBackend(CacheBackend):
         self, expire: Optional[Union[int, timedelta]]
     ) -> Optional[float]:
         """
-        Calculate the expiration timestamp.
+        Calculates the expiration timestamp for a cache entry.
 
         Args:
-            expire (Optional[Union[int, timedelta]]): Expiration in seconds or timedelta.
+            expire (Optional[Union[int, timedelta]]): The expiration time, either as
+                an integer (seconds) or a timedelta. If None, the entry does not expire.
 
         Returns:
-            Optional[float]: The expiration timestamp, or None if no expiration.
+            Optional[float]: The expiration timestamp (monotonic time), or None if no expiration.
+
+        Notes:
+            - Used internally by set/aset methods.
+            - Ensures consistent expiration regardless of system clock changes.
         """
         if expire is None:
             return None
@@ -104,50 +193,37 @@ class InMemoryBackend(CacheBackend):
 
     def _evict_if_needed(self):
         """
-        Evict the least recently used items if the cache exceeds max_size.
+        Evicts the least recently used items if the cache exceeds max_size.
+
+        If the cache size exceeds the configured maximum, this method removes
+        the oldest (least recently used) items until the size constraint is met.
+
+        Notes:
+            - Only applies if max_size is set.
+            - Called automatically after each set/aset operation.
         """
         if self._max_size is not None:
             while len(self._cache) > self._max_size:
                 self._cache.popitem(last=False)  # Remove oldest (LRU)
 
-    async def _cleanup_expired(self) -> None:
-        """
-        Periodically clean up expired items in the background.
-        """
-        while True:
-            await asyncio.sleep(60)
-            async with self._async_lock:
-                now = time.monotonic()
-                keys_to_delete = [
-                    k
-                    for k, (_, exp) in list(self._cache.items())
-                    if exp is not None and now > exp
-                ]
-                for k in keys_to_delete:
-                    self._cache.pop(k, None)
-
-    def _ensure_cleanup_task(self):
-        """
-        Ensure the background cleanup task is started (if in an event loop).
-        """
-        try:
-            loop = asyncio.get_running_loop()
-            if self._cleanup_task is None or self._cleanup_task.done():
-                self._cleanup_task = loop.create_task(self._cleanup_expired())
-        except RuntimeError:
-            # Not in an event loop (sync context), do nothing
-            pass
-
-    @ensure_cleanup_task
     def get(self, key: str) -> Optional[Any]:
         """
-        Synchronously retrieve a value from the cache.
+        Synchronously retrieves a value from the cache by key.
+
+        If the key does not exist or the entry has expired, returns None. If the
+        entry is expired, it is deleted from the cache (lazy deletion). Accessing
+        an item moves it to the end of the LRU order.
 
         Args:
-            key (str): The key to retrieve.
+            key (str): The cache key to retrieve.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found or expired.
+            Optional[Any]: The cached Python object, or None if not found or expired.
+
+        Notes:
+            - Thread-safe.
+            - Expired entries are removed on access.
+            - Updates LRU order on access.
         """
         k = self._make_key(key)
         with self._lock:
@@ -160,17 +236,28 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return None
 
-    @ensure_cleanup_task
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         """
-        Synchronously set a value in the cache.
+        Synchronously stores a value in the cache under the specified key.
+
+        If the key already exists, its value and expiration time are updated.
+        Optionally, an expiration time can be set, after which the entry will be
+        considered expired and eligible for deletion. Setting an item moves it to
+        the end of the LRU order.
 
         Args:
-            key (str): The key under which to store the value.
-            value (Any): The value to store.
-            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
+            key (str): The cache key to store the value under.
+            value (Any): The Python object to cache.
+            expire (Optional[Union[int, timedelta]], optional): The expiration time
+                for the cache entry. Can be specified as an integer (seconds) or a
+                timedelta. If None, the entry does not expire.
+
+        Notes:
+            - Thread-safe.
+            - Triggers LRU eviction if max_size is set.
+            - Updates LRU order on set.
         """
         k = self._make_key(key)
         expire_time = self._get_expire_time(expire)
@@ -179,22 +266,33 @@ class InMemoryBackend(CacheBackend):
             self._cache.move_to_end(k)
             self._evict_if_needed()
 
-    @ensure_cleanup_task
     def delete(self, key: str) -> None:
         """
-        Synchronously delete a value from the cache.
+        Synchronously deletes a cache entry by key.
+
+        If the key does not exist, this method does nothing.
 
         Args:
-            key (str): The key to delete.
+            key (str): The cache key to delete.
+
+        Notes:
+            - Thread-safe.
+            - The key is automatically namespaced.
         """
         k = self._make_key(key)
         with self._lock:
             self._cache.pop(k, None)
 
-    @ensure_cleanup_task
     def clear(self) -> None:
         """
-        Synchronously clear all values from the cache.
+        Synchronously removes all cache entries in the current namespace.
+
+        This method deletes all entries whose keys match the current namespace prefix.
+
+        Notes:
+            - Thread-safe.
+            - Only entries in the current namespace are affected.
+            - This operation can be expensive if the cache is large.
         """
         prefix = f"{self._namespace}:"
         with self._lock:
@@ -202,16 +300,20 @@ class InMemoryBackend(CacheBackend):
             for k in keys_to_delete:
                 self._cache.pop(k, None)
 
-    @ensure_cleanup_task
     def has(self, key: str) -> bool:
         """
-        Synchronously check if a key exists in the cache.
+        Synchronously checks if a cache key exists and is not expired.
 
         Args:
-            key (str): The key to check.
+            key (str): The cache key to check.
 
         Returns:
             bool: True if the key exists and is not expired, False otherwise.
+
+        Notes:
+            - Thread-safe.
+            - Expired entries are not considered present and are removed on check.
+            - Updates LRU order on access.
         """
         k = self._make_key(key)
         with self._lock:
@@ -224,16 +326,24 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return False
 
-    @ensure_cleanup_task
     async def aget(self, key: str) -> Optional[Any]:
         """
-        Asynchronously retrieve a value from the cache.
+        Asynchronously retrieves a value from the cache by key.
+
+        If the key does not exist or the entry has expired, returns None. If the
+        entry is expired, it is deleted from the cache (lazy deletion). Accessing
+        an item moves it to the end of the LRU order.
 
         Args:
-            key (str): The key to retrieve.
+            key (str): The cache key to retrieve.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found or expired.
+            Optional[Any]: The cached Python object, or None if not found or expired.
+
+        Notes:
+            - Asyncio-safe.
+            - Expired entries are removed on access.
+            - Updates LRU order on access.
         """
         k = self._make_key(key)
         async with self._async_lock:
@@ -246,17 +356,28 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return None
 
-    @ensure_cleanup_task
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> None:
         """
-        Asynchronously set a value in the cache.
+        Asynchronously stores a value in the cache under the specified key.
+
+        If the key already exists, its value and expiration time are updated.
+        Optionally, an expiration time can be set, after which the entry will be
+        considered expired and eligible for deletion. Setting an item moves it to
+        the end of the LRU order.
 
         Args:
-            key (str): The key under which to store the value.
-            value (Any): The value to store.
-            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
+            key (str): The cache key to store the value under.
+            value (Any): The Python object to cache.
+            expire (Optional[Union[int, timedelta]], optional): The expiration time
+                for the cache entry. Can be specified as an integer (seconds) or a
+                timedelta. If None, the entry does not expire.
+
+        Notes:
+            - Asyncio-safe.
+            - Triggers LRU eviction if max_size is set.
+            - Updates LRU order on set.
         """
         k = self._make_key(key)
         expire_time = self._get_expire_time(expire)
@@ -265,22 +386,33 @@ class InMemoryBackend(CacheBackend):
             self._cache.move_to_end(k)
             self._evict_if_needed()
 
-    @ensure_cleanup_task
     async def adelete(self, key: str) -> None:
         """
-        Asynchronously delete a value from the cache.
+        Asynchronously deletes a cache entry by key.
+
+        If the key does not exist, this method does nothing.
 
         Args:
-            key (str): The key to delete.
+            key (str): The cache key to delete.
+
+        Notes:
+            - Asyncio-safe.
+            - The key is automatically namespaced.
         """
         k = self._make_key(key)
         async with self._async_lock:
             self._cache.pop(k, None)
 
-    @ensure_cleanup_task
     async def aclear(self) -> None:
         """
-        Asynchronously clear all values from the cache.
+        Asynchronously removes all cache entries in the current namespace.
+
+        This method deletes all entries whose keys match the current namespace prefix.
+
+        Notes:
+            - Asyncio-safe.
+            - Only entries in the current namespace are affected.
+            - This operation can be expensive if the cache is large.
         """
         prefix = f"{self._namespace}:"
         async with self._async_lock:
@@ -288,16 +420,20 @@ class InMemoryBackend(CacheBackend):
             for k in keys_to_delete:
                 self._cache.pop(k, None)
 
-    @ensure_cleanup_task
     async def ahas(self, key: str) -> bool:
         """
-        Asynchronously check if a key exists in the cache.
+        Asynchronously checks if a cache key exists and is not expired.
 
         Args:
-            key (str): The key to check.
+            key (str): The cache key to check.
 
         Returns:
             bool: True if the key exists and is not expired, False otherwise.
+
+        Notes:
+            - Asyncio-safe.
+            - Expired entries are not considered present and are removed on check.
+            - Updates LRU order on access.
         """
         k = self._make_key(key)
         async with self._async_lock:
@@ -312,7 +448,14 @@ class InMemoryBackend(CacheBackend):
 
     def close(self) -> None:
         """
-        Synchronously close the backend and cancel the cleanup task if running.
+        Closes the backend and stops the background cleanup scheduler.
+
+        This method should be called when the backend is no longer needed to ensure
+        all resources are released and background jobs are stopped.
+
+        Notes:
+            - After calling this method, the cache is cleared and cannot be used.
+            - The background cleanup scheduler is stopped.
         """
-        if self._cleanup_task and not self._cleanup_task.done():
-            self._cleanup_task.cancel()
+        self._stop_cleanup_scheduler()
+        self._cache = None
