@@ -107,9 +107,6 @@ plugins:
             separate_signature: true
             unwrap_annotated: true
             members_order: source
-            preload_modules:
-              - httpx
-              - starlette
             docstring_style: google
             show_source: true
             show_signature: true
