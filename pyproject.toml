@@ -84,6 +84,10 @@ all = [
     'aioboto3>=6.0.0'
 ]
 
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
@@ -93,6 +97,9 @@ dev = [
     "pytest>=8.4.0",
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=6.2.1",
+    "pytest-xdist>=3.7.0",
     "testcontainers[postgres,redis,memcached]>=4.10.0",
+    "tox>=4.27.0",
+    "twine>=6.1.0",
     "uvicorn[standard]>=0.34.3",
 ]
