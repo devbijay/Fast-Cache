@@ -28,7 +28,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi>=0.75.0"
+    "fastapi>=0.75.0",
+    "apscheduler>=3.4.0"
 ]
 
 [project.urls]
@@ -64,7 +65,7 @@ memcached = [
     "pymemcache>=4.0.0"
 ]
 mongodb = [
-    "pymongo[snappy,gssapi,srv]>=4.6.0"
+    "pymongo[snappy,gssapi]>=4.6.0"
 ]
 firestore = [
     'google-cloud-firestore>=2.3.0'
@@ -76,6 +77,7 @@ dynamodb = [
 all = [
     "redis>=4.2.0",
     "psycopg[pool]>=3.2.9",
+    "apscheduler>=3.4.0",
     "aiomcache>=0.8.1",
     "pymemcache>=4.0.0",
     "pymongo[snappy,gssapi,srv]>=4.6.0",
