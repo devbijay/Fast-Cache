@@ -19,7 +19,7 @@ __all__ = [
     "MemcachedBackend",
     "MongoDBBackend",
     "FirestoreBackend",
-    "DynamoDBBackend"
+    "DynamoDBBackend",
 ]
 
 

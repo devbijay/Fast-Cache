@@ -3,18 +3,6 @@ import time
 import asyncio
 
 
-try:
-    from fast_cache import PostgresBackend
-
-    POSTGRES_AVAILABLE = True
-except ImportError:
-    POSTGRES_AVAILABLE = False
-
-pytestmark = pytest.mark.skipif(
-    not POSTGRES_AVAILABLE, reason="PostgresBackend not available"
-)
-
-
 # ---- SYNC TESTS ----
 def test_set_and_get(postgres_cache):
     postgres_cache.set("foo", "bar")

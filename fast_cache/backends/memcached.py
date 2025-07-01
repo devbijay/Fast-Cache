@@ -1,5 +1,5 @@
 import pickle
-from typing import Any, Optional, Union, Mapping
+from typing import Any, Optional, Union
 from datetime import timedelta
 from .backend import CacheBackend
 

@@ -97,7 +97,6 @@ class DynamoDBBackend(CacheBackend):
             # Create the table from the actual resource
             self._async_table = await actual_resource.Table(self._table_name)
 
-
         return self._async_table
 
     def _ensure_table_exists(self) -> None:
@@ -366,7 +365,6 @@ class DynamoDBBackend(CacheBackend):
                 ExpressionAttributeNames={"#ttl": "ttl"},
             )
 
-
             if "Item" not in response:
                 return False
 
@@ -480,7 +478,9 @@ class DynamoDBBackend(CacheBackend):
                 if response.get("Items"):
                     async with table.batch_writer() as batch:
                         for item in response["Items"]:
-                            await batch.delete_item(Key={"cache_key": item["cache_key"]})
+                            await batch.delete_item(
+                                Key={"cache_key": item["cache_key"]}
+                            )
 
         except Exception:
             pass
