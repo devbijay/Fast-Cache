@@ -67,7 +67,6 @@ FastAPI Cachekit supports multiple cache backends, so you can choose the best fi
   - 🟡 Requires AWS account and credentials.
 
 ---
----
 
 ## Installation for Each Backend
 
