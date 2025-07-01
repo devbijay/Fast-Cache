@@ -1,7 +1,5 @@
 import pytest
-import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import timedelta
 
 from fast_cache import FirestoreBackend
 
@@ -21,6 +19,7 @@ def firestore_backend():
         backend._sync_db = mock_sync_db
         backend._async_db = mock_async_db
         yield backend
+        backend.close()
 
 
 # ---- SYNC TESTS ----

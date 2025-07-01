@@ -1,12 +1,9 @@
-import os
 import time
 import pytest
 from fastapi.testclient import TestClient
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
 
 from examples.main import app
-from fast_cache import RedisBackend, cache, InMemoryBackend, PostgresBackend
+from fast_cache import cache, InMemoryBackend
 
 
 @pytest.fixture
@@ -15,6 +12,7 @@ def client():
     cache.init_app(app=app, backend=backend, default_expire=120)
     with TestClient(app) as c:
         yield c
+        backend.close()
 
 
 def test_decorator_async_cache(client):

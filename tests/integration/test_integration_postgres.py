@@ -1,8 +1,6 @@
-import os
 import time
 import pytest
 from fastapi.testclient import TestClient
-from testcontainers.postgres import PostgresContainer
 
 
 from examples.main import app
@@ -14,6 +12,7 @@ def shared_backend(postgres_container):
     db_url = postgres_container.get_connection_url(driver=None)
     backend = PostgresBackend(db_url, namespace="integration_demo")
     yield backend
+    backend.close()
 
 
 @pytest.fixture()

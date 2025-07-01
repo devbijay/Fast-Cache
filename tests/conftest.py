@@ -1,8 +1,8 @@
 import asyncio
 import sys
+import uuid
 
 import pytest
-import os
 
 import pytest_asyncio
 from testcontainers.core.container import DockerContainer
@@ -47,6 +47,7 @@ def in_memory_cache():
     cache.clear()
     yield cache
     cache.clear()
+    cache.close()
 
 
 @pytest.fixture(scope="session")
@@ -94,6 +95,7 @@ def postgres_cache(postgres_dsn: str) -> PostgresBackend:
     finally:
         # Teardown: guaranteed to run even if the test fails
         backend.clear()
+        backend.close()
 
 
 @pytest_asyncio.fixture
@@ -105,7 +107,7 @@ async def async_postgres_cache(postgres_dsn: str) -> PostgresBackend:
     finally:
         # Teardown: guaranteed to run even if the test fails
         await backend.aclear()
-        await backend.close()
+        await backend.aclose()
 
 
 @pytest.fixture(scope="session")
@@ -126,9 +128,9 @@ def memcached_cache(memcached_url):
     if not MEMCACHED_AVAILABLE:
         pytest.skip("MemcachedBackend not available")
     host, port = memcached_url
-    backend = MemcachedBackend(host=host, port=port, namespace="test-ns")
+    unique_namespace = f"test-ns-{uuid.uuid4().hex[:8]}"
+    backend = MemcachedBackend(host=host, port=port, namespace=unique_namespace)
     yield backend
-    backend.clear()
 
 
 @pytest.fixture(scope="session")

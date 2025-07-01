@@ -1,7 +1,6 @@
 import pytest
 import asyncio
 import time
-from fast_cache import InMemoryBackend
 
 
 # ---- SYNC TESTS ----

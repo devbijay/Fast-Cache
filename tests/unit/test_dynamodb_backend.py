@@ -13,10 +13,12 @@ logging.getLogger("testcontainers").setLevel(logging.CRITICAL)
 # ---- SYNC FIXTURE ----
 @pytest.fixture(scope="function")
 def cache(dynamodb_endpoint):
+    unique_table_name = f"test-cache-table-{uuid.uuid4().hex[:8]}"
+    unique_namespace = f"my_cache_{uuid.uuid4().hex[:8]}"
     backend = DynamoDBBackend(
-        table_name="test-cache-table",
+        table_name=unique_table_name,
         region_name="us-east-1",
-        namespace="my_cache",
+        namespace=unique_namespace,
         endpoint_url=dynamodb_endpoint,
         aws_access_key_id="dummy",
         aws_secret_access_key="dummy",
@@ -31,11 +33,12 @@ def cache(dynamodb_endpoint):
 @pytest_asyncio.fixture(scope="function")
 async def async_cache(dynamodb_endpoint):
     unique_table_name = f"test-async-cache-table-{uuid.uuid4().hex[:8]}"
+    unique_namespace = f"my_async_cache_{uuid.uuid4().hex[:8]}"
 
     backend = DynamoDBBackend(
         table_name=unique_table_name,
         region_name="us-east-1",
-        namespace="my_async_cache",
+        namespace=unique_namespace,
         endpoint_url=dynamodb_endpoint,
         aws_access_key_id="dummy",
         aws_secret_access_key="dummy",
@@ -80,9 +83,9 @@ def test_has(cache):
 
 
 def test_expire(cache):
-    cache.set("foo", "bar", expire=1)
+    cache.set("foo", "bar", expire=2)
     assert cache.get("foo") == "bar"
-    time.sleep(1.1)
+    time.sleep(2)
     assert cache.get("foo") is None
 
 

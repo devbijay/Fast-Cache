@@ -1,12 +1,10 @@
-import os
 import time
 import pytest
 from fastapi.testclient import TestClient
-from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 from examples.main import app
-from fast_cache import RedisBackend, cache, InMemoryBackend, PostgresBackend
+from fast_cache import RedisBackend, cache
 
 
 @pytest.fixture
