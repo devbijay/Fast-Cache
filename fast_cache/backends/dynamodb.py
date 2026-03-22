@@ -86,16 +86,20 @@ class DynamoDBBackend(CacheBackend):
 
     async def _get_async_table(self):
         if self._async_table is None:
-            # Create the resource context
+            # Create the resource context manager
             self._async_resource = self._async_session.resource(
                 "dynamodb", **self._connection_params
             )
 
-            # Enter the context and get the actual resource
-            actual_resource = await self._async_resource.__aenter__()
-
-            # Create the table from the actual resource
-            self._async_table = await actual_resource.Table(self._table_name)
+            # Enter the context and get the actual resource,
+            # ensuring cleanup on failure to prevent leaks
+            try:
+                actual_resource = await self._async_resource.__aenter__()
+                self._async_table = await actual_resource.Table(self._table_name)
+            except BaseException:
+                await self._async_resource.__aexit__(None, None, None)
+                self._async_resource = None
+                raise
 
         return self._async_table
 
