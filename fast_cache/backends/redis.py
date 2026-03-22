@@ -1,4 +1,7 @@
+import asyncio
 import logging
+import time
+import uuid
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
@@ -6,6 +9,16 @@ import pickle
 from .backend import CacheBackend
 
 logger = logging.getLogger(__name__)
+
+# Atomic unlock: only delete if the caller's token still matches.
+# Prevents releasing a lock that expired and was re-acquired by another process.
+_UNLOCK_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
 
 
 class RedisBackend(CacheBackend):
@@ -252,6 +265,123 @@ class RedisBackend(CacheBackend):
             return self._sync_client.exists(self._make_key(key)) > 0
         except Exception as e:
             logger.warning("Cache has failed: %s", e)
+            return False
+
+    def acquire_lock(
+        self,
+        key: str,
+        timeout: int = 30,
+        wait: float = 5.0,
+        poll_interval: float = 0.05,
+    ) -> Optional[str]:
+        """
+        Acquire a distributed lock for stampede protection.
+
+        Args:
+            key: Cache key to lock (lock suffix added internally).
+            timeout: Lock auto-expiry in seconds (deadlock protection).
+            wait: Max seconds to poll before giving up.
+            poll_interval: Sleep between poll attempts in seconds.
+
+        Returns:
+            A token string if acquired, None if the lock could not be
+            obtained within the wait period or on Redis failure.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        token = uuid.uuid4().hex
+        deadline = time.monotonic() + wait
+
+        try:
+            while True:
+                if self._sync_client.set(lock_key, token, nx=True, ex=timeout):
+                    return token
+                if time.monotonic() >= deadline:
+                    return None
+                time.sleep(poll_interval)
+        except Exception as e:
+            logger.warning("Lock acquire failed: %s", e)
+            return None
+
+    def release_lock(self, key: str, token: str) -> bool:
+        """
+        Release a distributed lock only if the caller still owns it.
+
+        Uses a Lua script to atomically check the token and delete,
+        preventing release of a lock re-acquired by another process.
+
+        Args:
+            key: Cache key that was locked.
+            token: The token returned by acquire_lock.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        try:
+            return self._sync_client.eval(_UNLOCK_SCRIPT, 1, lock_key, token) == 1
+        except Exception as e:
+            logger.warning("Lock release failed: %s", e)
+            return False
+
+    async def aacquire_lock(
+        self,
+        key: str,
+        timeout: int = 30,
+        wait: float = 5.0,
+        poll_interval: float = 0.05,
+    ) -> Optional[str]:
+        """
+        Asynchronously acquire a distributed lock for stampede protection.
+
+        Args:
+            key: Cache key to lock (lock suffix added internally).
+            timeout: Lock auto-expiry in seconds (deadlock protection).
+            wait: Max seconds to poll before giving up.
+            poll_interval: Sleep between poll attempts in seconds.
+
+        Returns:
+            A token string if acquired, None if the lock could not be
+            obtained within the wait period or on Redis failure.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        token = uuid.uuid4().hex
+        deadline = time.monotonic() + wait
+
+        try:
+            while True:
+                if await self._async_client.set(
+                    lock_key, token, nx=True, ex=timeout
+                ):
+                    return token
+                if time.monotonic() >= deadline:
+                    return None
+                await asyncio.sleep(poll_interval)
+        except Exception as e:
+            logger.warning("Lock aacquire failed: %s", e)
+            return None
+
+    async def arelease_lock(self, key: str, token: str) -> bool:
+        """
+        Asynchronously release a distributed lock only if the caller still owns it.
+
+        Uses a Lua script to atomically check the token and delete,
+        preventing release of a lock re-acquired by another process.
+
+        Args:
+            key: Cache key that was locked.
+            token: The token returned by aacquire_lock.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        try:
+            result = await self._async_client.eval(
+                _UNLOCK_SCRIPT, 1, lock_key, token
+            )
+            return result == 1
+        except Exception as e:
+            logger.warning("Lock arelease failed: %s", e)
             return False
 
     async def close(self) -> None:

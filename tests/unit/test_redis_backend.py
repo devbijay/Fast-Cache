@@ -106,3 +106,78 @@ async def test_aget_default_parameter(cache):
     assert await cache.aget("nonexistent") is None
     await cache.aset("null_key", None)
     assert await cache.aget("null_key", default=sentinel) is None
+
+
+# ---- LOCK TESTS (SYNC) ----
+def test_acquire_and_release_lock(cache):
+    """acquire_lock returns a token, release_lock returns True."""
+    token = cache.acquire_lock("locktest", timeout=5, wait=0)
+    assert token is not None
+    assert cache.release_lock("locktest", token) is True
+
+
+def test_lock_is_exclusive(cache):
+    """Second acquire with wait=0 returns None while lock is held."""
+    token = cache.acquire_lock("exclusive", timeout=5, wait=0)
+    assert token is not None
+    assert cache.acquire_lock("exclusive", timeout=5, wait=0) is None
+    cache.release_lock("exclusive", token)
+
+
+def test_release_with_wrong_token(cache):
+    """Releasing with wrong token returns False and lock remains."""
+    token = cache.acquire_lock("wrongtoken", timeout=5, wait=0)
+    assert token is not None
+    assert cache.release_lock("wrongtoken", "bad-token") is False
+    # Lock still held — second acquire still fails
+    assert cache.acquire_lock("wrongtoken", timeout=5, wait=0) is None
+    cache.release_lock("wrongtoken", token)
+
+
+def test_lock_auto_expires(cache):
+    """Lock auto-expires after timeout, allowing re-acquisition."""
+    token = cache.acquire_lock("expiry", timeout=1, wait=0)
+    assert token is not None
+    time.sleep(1.1)
+    new_token = cache.acquire_lock("expiry", timeout=5, wait=0)
+    assert new_token is not None
+    cache.release_lock("expiry", new_token)
+
+
+# ---- LOCK TESTS (ASYNC) ----
+@pytest.mark.asyncio
+async def test_async_acquire_and_release_lock(cache):
+    """aacquire_lock returns a token, arelease_lock returns True."""
+    token = await cache.aacquire_lock("alocktest", timeout=5, wait=0)
+    assert token is not None
+    assert await cache.arelease_lock("alocktest", token) is True
+
+
+@pytest.mark.asyncio
+async def test_async_lock_is_exclusive(cache):
+    """Second aacquire_lock with wait=0 returns None while lock is held."""
+    token = await cache.aacquire_lock("aexclusive", timeout=5, wait=0)
+    assert token is not None
+    assert await cache.aacquire_lock("aexclusive", timeout=5, wait=0) is None
+    await cache.arelease_lock("aexclusive", token)
+
+
+@pytest.mark.asyncio
+async def test_async_release_with_wrong_token(cache):
+    """Releasing with wrong token returns False and lock remains."""
+    token = await cache.aacquire_lock("awrongtoken", timeout=5, wait=0)
+    assert token is not None
+    assert await cache.arelease_lock("awrongtoken", "bad-token") is False
+    assert await cache.aacquire_lock("awrongtoken", timeout=5, wait=0) is None
+    await cache.arelease_lock("awrongtoken", token)
+
+
+@pytest.mark.asyncio
+async def test_async_lock_auto_expires(cache):
+    """Lock auto-expires after timeout, allowing re-acquisition."""
+    token = await cache.aacquire_lock("aexpiry", timeout=1, wait=0)
+    assert token is not None
+    await asyncio.sleep(1.1)
+    new_token = await cache.aacquire_lock("aexpiry", timeout=5, wait=0)
+    assert new_token is not None
+    await cache.arelease_lock("aexpiry", new_token)
