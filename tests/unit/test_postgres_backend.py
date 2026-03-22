@@ -94,3 +94,19 @@ async def test_aget_default_parameter(async_postgres_cache):
     assert await async_postgres_cache.aget("nonexistent") is None
     await async_postgres_cache.aset("null_key", None)
     assert await async_postgres_cache.aget("null_key", default=sentinel) is None
+
+
+# ---- CONCURRENCY TESTS ----
+@pytest.mark.asyncio
+async def test_concurrent_async_init(postgres_dsn):
+    """Concurrent aget() calls on a fresh backend must not race on _ensure_async_pool_open()."""
+    from fast_cache import PostgresBackend
+
+    backend = PostgresBackend(postgres_dsn, namespace="pytest_race")
+    try:
+        results = await asyncio.gather(
+            *[backend.aget(f"key-{i}") for i in range(50)]
+        )
+        assert all(r is None for r in results)
+    finally:
+        await backend.aclose()
