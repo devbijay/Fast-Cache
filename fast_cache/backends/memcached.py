@@ -1,7 +1,10 @@
+import logging
 import pickle
 from typing import Any, Optional, Union
 from datetime import timedelta
 from .backend import CacheBackend
+
+logger = logging.getLogger(__name__)
 
 
 class MemcachedBackend(CacheBackend):
@@ -101,7 +104,8 @@ class MemcachedBackend(CacheBackend):
         try:
             value = self._sync_client.get(self._make_key(key))
             return pickle.loads(value) if value else default
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache get failed: %s", e)
             return default
 
     def set(
@@ -135,8 +139,8 @@ class MemcachedBackend(CacheBackend):
             self._sync_client.set(
                 self._make_key(key), pickle.dumps(value), expire=exptime
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache set failed: %s", e)
 
     def delete(self, key: str) -> None:
         """
@@ -153,8 +157,8 @@ class MemcachedBackend(CacheBackend):
         """
         try:
             self._sync_client.delete(self._make_key(key))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache delete failed: %s", e)
 
     def clear(self) -> None:
         """
@@ -171,8 +175,8 @@ class MemcachedBackend(CacheBackend):
 
         try:
             self._sync_client.flush_all()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache clear failed: %s", e)
 
     def has(self, key: str) -> bool:
         """
@@ -190,7 +194,8 @@ class MemcachedBackend(CacheBackend):
         """
         try:
             return self._sync_client.get(self._make_key(key)) is not None
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache has failed: %s", e)
             return False
 
     async def aget(self, key: str, default: Any = None) -> Any:
@@ -214,7 +219,8 @@ class MemcachedBackend(CacheBackend):
         try:
             value = await self._async_client.get(self._make_key(key))
             return pickle.loads(value) if value else default
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache aget failed: %s", e)
             return default
 
     async def aset(
@@ -248,8 +254,8 @@ class MemcachedBackend(CacheBackend):
             await self._async_client.set(
                 self._make_key(key), pickle.dumps(value), exptime=exptime
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aset failed: %s", e)
 
     async def adelete(self, key: str) -> None:
         """
@@ -266,8 +272,8 @@ class MemcachedBackend(CacheBackend):
         """
         try:
             await self._async_client.delete(self._make_key(key))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache adelete failed: %s", e)
 
     async def aclear(self) -> None:
         """
@@ -283,8 +289,8 @@ class MemcachedBackend(CacheBackend):
         """
         try:
             await self._async_client.flush_all()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aclear failed: %s", e)
 
     async def ahas(self, key: str) -> bool:
         """
@@ -303,7 +309,8 @@ class MemcachedBackend(CacheBackend):
         try:
             value = await self._async_client.get(self._make_key(key))
             return value is not None
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache ahas failed: %s", e)
             return False
 
     async def close(self) -> None:
@@ -320,5 +327,5 @@ class MemcachedBackend(CacheBackend):
         try:
             await self._async_client.close()
             self._sync_client.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache close failed: %s", e)

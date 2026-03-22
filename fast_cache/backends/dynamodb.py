@@ -1,10 +1,13 @@
 import hashlib
+import logging
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
 import time
 
 from .backend import CacheBackend
+
+logger = logging.getLogger(__name__)
 
 
 class DynamoDBBackend(CacheBackend):
@@ -262,7 +265,8 @@ class DynamoDBBackend(CacheBackend):
                 return default
             value = self._deserialize_value(item["value"])
             return value
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache get failed: %s", e)
             return default
 
     async def aget(self, key: str, default: Any = None) -> Any:
@@ -291,7 +295,8 @@ class DynamoDBBackend(CacheBackend):
                 return default
 
             return self._deserialize_value(item["value"])
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache aget failed: %s", e)
             return default
 
     def set(
@@ -308,8 +313,8 @@ class DynamoDBBackend(CacheBackend):
         try:
             item = self._build_item(key, value, expire)
             self._sync_table.put_item(Item=item)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache set failed: %s", e)
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -326,8 +331,8 @@ class DynamoDBBackend(CacheBackend):
             table = await self._get_async_table()
             item = self._build_item(key, value, expire)
             await table.put_item(Item=item)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aset failed: %s", e)
 
     def delete(self, key: str) -> None:
         """
@@ -338,8 +343,8 @@ class DynamoDBBackend(CacheBackend):
         """
         try:
             self._sync_table.delete_item(Key={"cache_key": self._make_key(key)})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache delete failed: %s", e)
 
     async def adelete(self, key: str) -> None:
         """
@@ -351,8 +356,8 @@ class DynamoDBBackend(CacheBackend):
         try:
             table = await self._get_async_table()
             await table.delete_item(Key={"cache_key": self._make_key(key)})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache adelete failed: %s", e)
 
     def has(self, key: str) -> bool:
         """
@@ -382,7 +387,8 @@ class DynamoDBBackend(CacheBackend):
                 return False
 
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache has failed: %s", e)
             return False
 
     async def ahas(self, key: str) -> bool:
@@ -414,7 +420,8 @@ class DynamoDBBackend(CacheBackend):
                 return False
 
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache ahas failed: %s", e)
             return False
 
     def clear(self) -> None:
@@ -449,8 +456,8 @@ class DynamoDBBackend(CacheBackend):
                         for item in response["Items"]:
                             batch.delete_item(Key={"cache_key": item["cache_key"]})
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache clear failed: %s", e)
 
     async def aclear(self) -> None:
         """
@@ -488,8 +495,8 @@ class DynamoDBBackend(CacheBackend):
                                 Key={"cache_key": item["cache_key"]}
                             )
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aclear failed: %s", e)
 
     async def close(self) -> None:
         """

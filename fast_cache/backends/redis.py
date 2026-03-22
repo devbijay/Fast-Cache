@@ -1,8 +1,11 @@
+import logging
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
 
 from .backend import CacheBackend
+
+logger = logging.getLogger(__name__)
 
 
 class RedisBackend(CacheBackend):
@@ -107,7 +110,8 @@ class RedisBackend(CacheBackend):
         try:
             result = await self._async_client.get(self._make_key(key))
             return pickle.loads(result) if result else default
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache aget failed: %s", e)
             return default
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -124,7 +128,8 @@ class RedisBackend(CacheBackend):
         try:
             result = self._sync_client.get(self._make_key(key))
             return pickle.loads(result) if result else default
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache get failed: %s", e)
             return default
 
     async def aset(
@@ -143,8 +148,8 @@ class RedisBackend(CacheBackend):
             await self._async_client.set(
                 self._make_key(key), pickle.dumps(value), ex=ex
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aset failed: %s", e)
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -160,8 +165,8 @@ class RedisBackend(CacheBackend):
         try:
             ex = expire.total_seconds() if isinstance(expire, timedelta) else expire
             self._sync_client.set(self._make_key(key), pickle.dumps(value), ex=ex)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache set failed: %s", e)
 
     async def adelete(self, key: str) -> None:
         """
@@ -172,8 +177,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             await self._async_client.delete(self._make_key(key))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache adelete failed: %s", e)
 
     def delete(self, key: str) -> None:
         """
@@ -184,8 +189,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             self._sync_client.delete(self._make_key(key))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache delete failed: %s", e)
 
     async def aclear(self) -> None:
         """
@@ -195,8 +200,8 @@ class RedisBackend(CacheBackend):
             keys = await self._scan_keys()
             if keys:
                 await self._async_client.delete(*keys)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aclear failed: %s", e)
 
     def clear(self) -> None:
         """
@@ -214,8 +219,8 @@ class RedisBackend(CacheBackend):
                     self._sync_client.delete(*keys)
                 if cursor == 0:
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache clear failed: %s", e)
 
     async def ahas(self, key: str) -> bool:
         """
@@ -229,7 +234,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             return await self._async_client.exists(self._make_key(key)) > 0
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache ahas failed: %s", e)
             return False
 
     def has(self, key: str) -> bool:
@@ -244,7 +250,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             return self._sync_client.exists(self._make_key(key)) > 0
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache has failed: %s", e)
             return False
 
     async def close(self) -> None:
