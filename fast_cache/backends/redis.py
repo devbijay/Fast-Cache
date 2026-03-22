@@ -93,37 +93,39 @@ class RedisBackend(CacheBackend):
                 break
         return keys
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             result = await self._async_client.get(self._make_key(key))
-            return pickle.loads(result) if result else None
+            return pickle.loads(result) if result else default
         except Exception:
-            return None
+            return default
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             result = self._sync_client.get(self._make_key(key))
-            return pickle.loads(result) if result else None
+            return pickle.loads(result) if result else default
         except Exception:
-            return None
+            return default
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
