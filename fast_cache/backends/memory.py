@@ -123,15 +123,14 @@ class InMemoryBackend(CacheBackend):
             - Only entries with a non-null expiration time and an expiration
               time earlier than the current time are deleted.
         """
-        while True:
-            now = time.monotonic()
-            keys_to_delete = [
-                k
-                for k, (_, exp) in list(self._cache.items())
-                if exp is not None and now > exp
-            ]
-            for k in keys_to_delete:
-                self._cache.pop(k, None)
+        now = time.monotonic()
+        keys_to_delete = [
+            k
+            for k, (_, exp) in list(self._cache.items())
+            if exp is not None and now > exp
+        ]
+        for k in keys_to_delete:
+            self._cache.pop(k, None)
 
     def _make_key(self, key: str) -> str:
         """
@@ -206,19 +205,20 @@ class InMemoryBackend(CacheBackend):
             while len(self._cache) > self._max_size:
                 self._cache.popitem(last=False)  # Remove oldest (LRU)
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieves a value from the cache by key.
 
-        If the key does not exist or the entry has expired, returns None. If the
+        If the key does not exist or the entry has expired, returns default. If the
         entry is expired, it is deleted from the cache (lazy deletion). Accessing
         an item moves it to the end of the LRU order.
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found or expired.
+            Any: The cached Python object, or default if not found or expired.
 
         Notes:
             - Thread-safe.
@@ -234,7 +234,7 @@ class InMemoryBackend(CacheBackend):
                     self._cache.move_to_end(k)
                     return value
                 self._cache.pop(k, None)
-            return None
+            return default
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -326,19 +326,20 @@ class InMemoryBackend(CacheBackend):
                 self._cache.pop(k, None)
             return False
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieves a value from the cache by key.
 
-        If the key does not exist or the entry has expired, returns None. If the
+        If the key does not exist or the entry has expired, returns default. If the
         entry is expired, it is deleted from the cache (lazy deletion). Accessing
         an item moves it to the end of the LRU order.
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found or expired.
+            Any: The cached Python object, or default if not found or expired.
 
         Notes:
             - Asyncio-safe.
@@ -354,7 +355,7 @@ class InMemoryBackend(CacheBackend):
                     self._cache.move_to_end(k)
                     return value
                 self._cache.pop(k, None)
-            return None
+            return default
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -458,4 +459,4 @@ class InMemoryBackend(CacheBackend):
             - The background cleanup scheduler is stopped.
         """
         self._stop_cleanup_scheduler()
-        self._cache = None
+        self._cache.clear()

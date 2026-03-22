@@ -128,3 +128,45 @@ async def test_async_expire(async_cache):
     assert await async_cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await async_cache.aget("foo") is None
+
+
+# ---- DEFAULT PARAMETER TESTS ----
+def test_get_default_parameter(cache):
+    """get() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert cache.get("nonexistent", default=sentinel) is sentinel
+    assert cache.get("nonexistent") is None
+    cache.set("null_key", None)
+    assert cache.get("null_key", default=sentinel) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_default_parameter(async_cache):
+    """aget() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert await async_cache.aget("nonexistent", default=sentinel) is sentinel
+    assert await async_cache.aget("nonexistent") is None
+    await async_cache.aset("null_key", None)
+    assert await async_cache.aget("null_key", default=sentinel) is None
+
+
+# ---- CONCURRENCY TESTS ----
+@pytest.mark.asyncio
+async def test_concurrent_async_init(dynamodb_endpoint):
+    """Concurrent aget() calls on a fresh backend must not race on _get_async_table()."""
+    backend = DynamoDBBackend(
+        table_name=f"test-race-{uuid.uuid4().hex[:8]}",
+        region_name="us-east-1",
+        namespace=f"race_{uuid.uuid4().hex[:8]}",
+        endpoint_url=dynamodb_endpoint,
+        aws_access_key_id="dummy",
+        aws_secret_access_key="dummy",
+        create_table=True,
+    )
+    try:
+        results = await asyncio.gather(
+            *[backend.aget(f"key-{i}") for i in range(50)]
+        )
+        assert all(r is None for r in results)
+    finally:
+        await backend.close()

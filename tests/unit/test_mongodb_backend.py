@@ -90,3 +90,23 @@ async def test_async_expire(cache):
     assert await cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await cache.aget("foo") is None
+
+
+# ---- DEFAULT PARAMETER TESTS ----
+def test_get_default_parameter(cache):
+    """get() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert cache.get("nonexistent", default=sentinel) is sentinel
+    assert cache.get("nonexistent") is None
+    cache.set("null_key", None)
+    assert cache.get("null_key", default=sentinel) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_default_parameter(cache):
+    """aget() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert await cache.aget("nonexistent", default=sentinel) is sentinel
+    assert await cache.aget("nonexistent") is None
+    await cache.aset("null_key", None)
+    assert await cache.aget("null_key", default=sentinel) is None

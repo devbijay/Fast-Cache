@@ -93,3 +93,26 @@ async def test_async_lru_eviction(in_memory_cache):
     await in_memory_cache.aset("d", 4)  # Should evict "a"
     assert await in_memory_cache.aget("a") is None
     assert await in_memory_cache.aget("b") == 2
+
+
+# ---- DEFAULT PARAMETER TESTS ----
+def test_get_default_parameter(in_memory_cache):
+    """get() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    # Missing key with default returns sentinel
+    assert in_memory_cache.get("nonexistent", default=sentinel) is sentinel
+    # Missing key without default returns None (backward compat)
+    assert in_memory_cache.get("nonexistent") is None
+    # Stored None is returned as None, not the default
+    in_memory_cache.set("null_key", None)
+    assert in_memory_cache.get("null_key", default=sentinel) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_default_parameter(in_memory_cache):
+    """aget() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert await in_memory_cache.aget("nonexistent", default=sentinel) is sentinel
+    assert await in_memory_cache.aget("nonexistent") is None
+    await in_memory_cache.aset("null_key", None)
+    assert await in_memory_cache.aget("null_key", default=sentinel) is None

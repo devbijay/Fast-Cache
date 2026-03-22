@@ -6,9 +6,17 @@ import pytest
 
 import pytest_asyncio
 from testcontainers.core.container import DockerContainer
-from testcontainers.memcached import MemcachedContainer
-from testcontainers.mongodb import MongoDbContainer
 from testcontainers.redis import RedisContainer
+
+try:
+    from testcontainers.memcached import MemcachedContainer
+except ImportError:
+    MemcachedContainer = None
+
+try:
+    from testcontainers.mongodb import MongoDbContainer
+except ImportError:
+    MongoDbContainer = None
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -112,6 +120,8 @@ async def async_postgres_cache(postgres_dsn: str) -> PostgresBackend:
 
 @pytest.fixture(scope="session")
 def memcached_container():
+    if MemcachedContainer is None:
+        pytest.skip("testcontainers[memcached] not available")
     with MemcachedContainer() as container:
         yield container
 
@@ -135,6 +145,8 @@ def memcached_cache(memcached_url):
 
 @pytest.fixture(scope="session")
 def mongo_url():
+    if MongoDbContainer is None:
+        pytest.skip("testcontainers[mongodb] not available")
     with MongoDbContainer(
         username="test", password="test", dbname="testdb"
     ) as container:

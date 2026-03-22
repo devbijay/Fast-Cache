@@ -1,5 +1,9 @@
+from importlib.metadata import version
+
 from .integration import FastAPICache
 from .backends.backend import CacheBackend
+
+__version__ = version("fastapi-cachekit")
 
 from .backends.redis import RedisBackend
 from .backends.memory import InMemoryBackend

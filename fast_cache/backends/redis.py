@@ -1,8 +1,24 @@
+import asyncio
+import logging
+import time
+import uuid
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
 
 from .backend import CacheBackend
+
+logger = logging.getLogger(__name__)
+
+# Atomic unlock: only delete if the caller's token still matches.
+# Prevents releasing a lock that expired and was re-acquired by another process.
+_UNLOCK_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
 
 
 class RedisBackend(CacheBackend):
@@ -93,37 +109,41 @@ class RedisBackend(CacheBackend):
                 break
         return keys
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             result = await self._async_client.get(self._make_key(key))
-            return pickle.loads(result) if result else None
-        except Exception:
-            return None
+            return pickle.loads(result) if result else default
+        except Exception as e:
+            logger.warning("Cache aget failed: %s", e)
+            return default
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             result = self._sync_client.get(self._make_key(key))
-            return pickle.loads(result) if result else None
-        except Exception:
-            return None
+            return pickle.loads(result) if result else default
+        except Exception as e:
+            logger.warning("Cache get failed: %s", e)
+            return default
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -141,8 +161,8 @@ class RedisBackend(CacheBackend):
             await self._async_client.set(
                 self._make_key(key), pickle.dumps(value), ex=ex
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aset failed: %s", e)
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -158,8 +178,8 @@ class RedisBackend(CacheBackend):
         try:
             ex = expire.total_seconds() if isinstance(expire, timedelta) else expire
             self._sync_client.set(self._make_key(key), pickle.dumps(value), ex=ex)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache set failed: %s", e)
 
     async def adelete(self, key: str) -> None:
         """
@@ -170,8 +190,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             await self._async_client.delete(self._make_key(key))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache adelete failed: %s", e)
 
     def delete(self, key: str) -> None:
         """
@@ -182,8 +202,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             self._sync_client.delete(self._make_key(key))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache delete failed: %s", e)
 
     async def aclear(self) -> None:
         """
@@ -193,8 +213,8 @@ class RedisBackend(CacheBackend):
             keys = await self._scan_keys()
             if keys:
                 await self._async_client.delete(*keys)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aclear failed: %s", e)
 
     def clear(self) -> None:
         """
@@ -212,8 +232,8 @@ class RedisBackend(CacheBackend):
                     self._sync_client.delete(*keys)
                 if cursor == 0:
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache clear failed: %s", e)
 
     async def ahas(self, key: str) -> bool:
         """
@@ -227,7 +247,8 @@ class RedisBackend(CacheBackend):
         """
         try:
             return await self._async_client.exists(self._make_key(key)) > 0
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache ahas failed: %s", e)
             return False
 
     def has(self, key: str) -> bool:
@@ -242,7 +263,125 @@ class RedisBackend(CacheBackend):
         """
         try:
             return self._sync_client.exists(self._make_key(key)) > 0
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache has failed: %s", e)
+            return False
+
+    def acquire_lock(
+        self,
+        key: str,
+        timeout: int = 30,
+        wait: float = 5.0,
+        poll_interval: float = 0.05,
+    ) -> Optional[str]:
+        """
+        Acquire a distributed lock for stampede protection.
+
+        Args:
+            key: Cache key to lock (lock suffix added internally).
+            timeout: Lock auto-expiry in seconds (deadlock protection).
+            wait: Max seconds to poll before giving up.
+            poll_interval: Sleep between poll attempts in seconds.
+
+        Returns:
+            A token string if acquired, None if the lock could not be
+            obtained within the wait period or on Redis failure.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        token = uuid.uuid4().hex
+        deadline = time.monotonic() + wait
+
+        try:
+            while True:
+                if self._sync_client.set(lock_key, token, nx=True, ex=timeout):
+                    return token
+                if time.monotonic() >= deadline:
+                    return None
+                time.sleep(poll_interval)
+        except Exception as e:
+            logger.warning("Lock acquire failed: %s", e)
+            return None
+
+    def release_lock(self, key: str, token: str) -> bool:
+        """
+        Release a distributed lock only if the caller still owns it.
+
+        Uses a Lua script to atomically check the token and delete,
+        preventing release of a lock re-acquired by another process.
+
+        Args:
+            key: Cache key that was locked.
+            token: The token returned by acquire_lock.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        try:
+            return self._sync_client.eval(_UNLOCK_SCRIPT, 1, lock_key, token) == 1
+        except Exception as e:
+            logger.warning("Lock release failed: %s", e)
+            return False
+
+    async def aacquire_lock(
+        self,
+        key: str,
+        timeout: int = 30,
+        wait: float = 5.0,
+        poll_interval: float = 0.05,
+    ) -> Optional[str]:
+        """
+        Asynchronously acquire a distributed lock for stampede protection.
+
+        Args:
+            key: Cache key to lock (lock suffix added internally).
+            timeout: Lock auto-expiry in seconds (deadlock protection).
+            wait: Max seconds to poll before giving up.
+            poll_interval: Sleep between poll attempts in seconds.
+
+        Returns:
+            A token string if acquired, None if the lock could not be
+            obtained within the wait period or on Redis failure.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        token = uuid.uuid4().hex
+        deadline = time.monotonic() + wait
+
+        try:
+            while True:
+                if await self._async_client.set(
+                    lock_key, token, nx=True, ex=timeout
+                ):
+                    return token
+                if time.monotonic() >= deadline:
+                    return None
+                await asyncio.sleep(poll_interval)
+        except Exception as e:
+            logger.warning("Lock aacquire failed: %s", e)
+            return None
+
+    async def arelease_lock(self, key: str, token: str) -> bool:
+        """
+        Asynchronously release a distributed lock only if the caller still owns it.
+
+        Uses a Lua script to atomically check the token and delete,
+        preventing release of a lock re-acquired by another process.
+
+        Args:
+            key: Cache key that was locked.
+            token: The token returned by aacquire_lock.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        try:
+            result = await self._async_client.eval(
+                _UNLOCK_SCRIPT, 1, lock_key, token
+            )
+            return result == 1
+        except Exception as e:
+            logger.warning("Lock arelease failed: %s", e)
             return False
 
     async def close(self) -> None:

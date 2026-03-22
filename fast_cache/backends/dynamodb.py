@@ -1,10 +1,14 @@
+import asyncio
 import hashlib
+import logging
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
 import time
 
 from .backend import CacheBackend
+
+logger = logging.getLogger(__name__)
 
 
 class DynamoDBBackend(CacheBackend):
@@ -79,23 +83,32 @@ class DynamoDBBackend(CacheBackend):
         self._async_resource = None
         self._async_table = None
         self._async_session = aioboto3.Session()
+        self._async_table_lock = asyncio.Lock()
 
         # Create table if requested
         if create_table:
             self._ensure_table_exists()
 
     async def _get_async_table(self):
-        if self._async_table is None:
-            # Create the resource context
+        if self._async_table is not None:
+            return self._async_table
+        async with self._async_table_lock:
+            if self._async_table is not None:
+                return self._async_table
+            # Create the resource context manager
             self._async_resource = self._async_session.resource(
                 "dynamodb", **self._connection_params
             )
 
-            # Enter the context and get the actual resource
-            actual_resource = await self._async_resource.__aenter__()
-
-            # Create the table from the actual resource
-            self._async_table = await actual_resource.Table(self._table_name)
+            # Enter the context and get the actual resource,
+            # ensuring cleanup on failure to prevent leaks
+            try:
+                actual_resource = await self._async_resource.__aenter__()
+                self._async_table = await actual_resource.Table(self._table_name)
+            except BaseException:
+                await self._async_resource.__aexit__(None, None, None)
+                self._async_resource = None
+                raise
 
         return self._async_table
 
@@ -233,60 +246,64 @@ class DynamoDBBackend(CacheBackend):
 
         return item
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             response = self._sync_table.get_item(Key={"cache_key": self._make_key(key)})
 
             if "Item" not in response:
-                return None
+                return default
 
             item = response["Item"]
 
             # Check if item has expired and delete if so
             if self._is_expired(item):
                 self.delete(key)
-                return None
+                return default
             value = self._deserialize_value(item["value"])
             return value
-        except Exception:
-            return None
+        except Exception as e:
+            logger.warning("Cache get failed: %s", e)
+            return default
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             table = await self._get_async_table()
             response = await table.get_item(Key={"cache_key": self._make_key(key)})
 
             if "Item" not in response:
-                return None
+                return default
 
             item = response["Item"]
 
             # Check if item has expired and delete if so
             if self._is_expired(item):
                 await self.adelete(key)
-                return None
+                return default
 
             return self._deserialize_value(item["value"])
-        except Exception:
-            return None
+        except Exception as e:
+            logger.warning("Cache aget failed: %s", e)
+            return default
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -302,8 +319,8 @@ class DynamoDBBackend(CacheBackend):
         try:
             item = self._build_item(key, value, expire)
             self._sync_table.put_item(Item=item)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache set failed: %s", e)
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -320,8 +337,8 @@ class DynamoDBBackend(CacheBackend):
             table = await self._get_async_table()
             item = self._build_item(key, value, expire)
             await table.put_item(Item=item)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aset failed: %s", e)
 
     def delete(self, key: str) -> None:
         """
@@ -332,8 +349,8 @@ class DynamoDBBackend(CacheBackend):
         """
         try:
             self._sync_table.delete_item(Key={"cache_key": self._make_key(key)})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache delete failed: %s", e)
 
     async def adelete(self, key: str) -> None:
         """
@@ -345,8 +362,8 @@ class DynamoDBBackend(CacheBackend):
         try:
             table = await self._get_async_table()
             await table.delete_item(Key={"cache_key": self._make_key(key)})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache adelete failed: %s", e)
 
     def has(self, key: str) -> bool:
         """
@@ -376,7 +393,8 @@ class DynamoDBBackend(CacheBackend):
                 return False
 
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache has failed: %s", e)
             return False
 
     async def ahas(self, key: str) -> bool:
@@ -408,7 +426,8 @@ class DynamoDBBackend(CacheBackend):
                 return False
 
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("Cache ahas failed: %s", e)
             return False
 
     def clear(self) -> None:
@@ -443,8 +462,8 @@ class DynamoDBBackend(CacheBackend):
                         for item in response["Items"]:
                             batch.delete_item(Key={"cache_key": item["cache_key"]})
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache clear failed: %s", e)
 
     async def aclear(self) -> None:
         """
@@ -482,8 +501,8 @@ class DynamoDBBackend(CacheBackend):
                                 Key={"cache_key": item["cache_key"]}
                             )
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cache aclear failed: %s", e)
 
     async def close(self) -> None:
         """

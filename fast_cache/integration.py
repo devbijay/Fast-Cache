@@ -6,6 +6,8 @@ import inspect
 from functools import wraps
 from .backends.backend import CacheBackend
 
+_CACHE_MISS = object()
+
 
 class FastAPICache:
     """
@@ -42,6 +44,9 @@ class FastAPICache:
         expire: Optional[Union[int, timedelta]] = None,
         key_builder: Optional[Callable[..., str]] = None,
         namespace: Optional[str] = None,
+        stampede_protection: bool = True,
+        lock_timeout: int = 30,
+        lock_wait: float = 5.0,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Decorator for caching function results.
@@ -50,6 +55,12 @@ class FastAPICache:
             expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as a timedelta.
             key_builder (Optional[Callable[..., str]]): Custom function to build the cache key.
             namespace (Optional[str]): Optional namespace for the cache key.
+            stampede_protection (bool): Enable distributed lock to prevent thundering herd
+                on cache miss. Requires a backend that supports locking (e.g., Redis).
+                Silently skipped for backends without lock support. Defaults to True.
+            lock_timeout (int): Lock auto-expiry in seconds (deadlock protection). Defaults to 30.
+            lock_wait (float): Max seconds to wait for the lock before falling back
+                to a direct function call. Defaults to 5.0.
 
         Returns:
             Callable: A decorator that caches the function result.
@@ -89,6 +100,11 @@ class FastAPICache:
 
                 return key
 
+            def _backend_supports_locking() -> bool:
+                return self._backend is not None and hasattr(
+                    self._backend, "acquire_lock"
+                )
+
             @wraps(func)
             async def async_wrapper(*args, **kwargs) -> Any:
                 """
@@ -109,16 +125,46 @@ class FastAPICache:
                     return await func(*args, **kwargs)
 
                 cache_key = build_cache_key(*args, **kwargs)
+                effective_expire = expire or self._default_expire
 
-                # Try to get from cache
-                cached_value = await self._backend.aget(cache_key)
-                if cached_value is not None:
+                # Fast path: cache hit
+                cached_value = await self._backend.aget(
+                    cache_key, default=_CACHE_MISS
+                )
+                if cached_value is not _CACHE_MISS:
                     return cached_value
 
-                # Execute function and cache result
+                # Stampede protection: distributed lock
+                if stampede_protection and _backend_supports_locking():
+                    token = await self._backend.aacquire_lock(
+                        cache_key, timeout=lock_timeout, wait=lock_wait
+                    )
+
+                    if token is not None:
+                        # We are the lock holder — rebuild the value
+                        try:
+                            result = await func(*args, **kwargs)
+                            await self._backend.aset(
+                                cache_key, result, expire=effective_expire
+                            )
+                            return result
+                        finally:
+                            await self._backend.arelease_lock(cache_key, token)
+                    else:
+                        # Another process is rebuilding — check if it finished
+                        cached_value = await self._backend.aget(
+                            cache_key, default=_CACHE_MISS
+                        )
+                        if cached_value is not _CACHE_MISS:
+                            return cached_value
+
+                        # Still no value — fallback: call function directly
+                        return await func(*args, **kwargs)
+
+                # No stampede protection — original behavior
                 result = await func(*args, **kwargs)
                 await self._backend.aset(
-                    cache_key, result, expire=expire or self._default_expire
+                    cache_key, result, expire=effective_expire
                 )
                 return result
 
@@ -142,16 +188,46 @@ class FastAPICache:
                     return func(*args, **kwargs)
 
                 cache_key = build_cache_key(*args, **kwargs)
+                effective_expire = expire or self._default_expire
 
-                # Try to get from cache
-                cached_value = self._backend.get(cache_key)
-                if cached_value is not None:
+                # Fast path: cache hit
+                cached_value = self._backend.get(
+                    cache_key, default=_CACHE_MISS
+                )
+                if cached_value is not _CACHE_MISS:
                     return cached_value
 
-                # Execute function and cache result
+                # Stampede protection: distributed lock
+                if stampede_protection and _backend_supports_locking():
+                    token = self._backend.acquire_lock(
+                        cache_key, timeout=lock_timeout, wait=lock_wait
+                    )
+
+                    if token is not None:
+                        # We are the lock holder — rebuild the value
+                        try:
+                            result = func(*args, **kwargs)
+                            self._backend.set(
+                                cache_key, result, expire=effective_expire
+                            )
+                            return result
+                        finally:
+                            self._backend.release_lock(cache_key, token)
+                    else:
+                        # Another process is rebuilding — check if it finished
+                        cached_value = self._backend.get(
+                            cache_key, default=_CACHE_MISS
+                        )
+                        if cached_value is not _CACHE_MISS:
+                            return cached_value
+
+                        # Still no value — fallback: call function directly
+                        return func(*args, **kwargs)
+
+                # No stampede protection — original behavior
                 result = func(*args, **kwargs)
                 self._backend.set(
-                    cache_key, result, expire=expire or self._default_expire
+                    cache_key, result, expire=effective_expire
                 )
                 return result
 

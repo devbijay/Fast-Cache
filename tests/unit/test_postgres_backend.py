@@ -74,3 +74,39 @@ async def test_async_expire(async_postgres_cache):
     assert await async_postgres_cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await async_postgres_cache.aget("foo") is None
+
+
+# ---- DEFAULT PARAMETER TESTS ----
+def test_get_default_parameter(postgres_cache):
+    """get() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert postgres_cache.get("nonexistent", default=sentinel) is sentinel
+    assert postgres_cache.get("nonexistent") is None
+    postgres_cache.set("null_key", None)
+    assert postgres_cache.get("null_key", default=sentinel) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_default_parameter(async_postgres_cache):
+    """aget() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert await async_postgres_cache.aget("nonexistent", default=sentinel) is sentinel
+    assert await async_postgres_cache.aget("nonexistent") is None
+    await async_postgres_cache.aset("null_key", None)
+    assert await async_postgres_cache.aget("null_key", default=sentinel) is None
+
+
+# ---- CONCURRENCY TESTS ----
+@pytest.mark.asyncio
+async def test_concurrent_async_init(postgres_dsn):
+    """Concurrent aget() calls on a fresh backend must not race on _ensure_async_pool_open()."""
+    from fast_cache import PostgresBackend
+
+    backend = PostgresBackend(postgres_dsn, namespace="pytest_race")
+    try:
+        results = await asyncio.gather(
+            *[backend.aget(f"key-{i}") for i in range(50)]
+        )
+        assert all(r is None for r in results)
+    finally:
+        await backend.aclose()

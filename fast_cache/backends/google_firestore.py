@@ -148,18 +148,19 @@ class FirestoreBackend(CacheBackend):
         """
         return expires_at is not None and expires_at < time.time()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieves a value from the cache by key.
 
-        If the key does not exist or the entry has expired, returns None. If the
+        If the key does not exist or the entry has expired, returns default. If the
         entry is expired, it is not automatically deleted.
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found or expired.
+            Any: The cached Python object, or default if not found or expired.
 
         Notes:
             - The value is deserialized using pickle.
@@ -176,8 +177,8 @@ class FirestoreBackend(CacheBackend):
                 try:
                     return pickle.loads(data["value"])
                 except (pickle.UnpicklingError, KeyError):
-                    return None
-        return None
+                    return default
+        return default
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -268,18 +269,19 @@ class FirestoreBackend(CacheBackend):
             return not self._is_expired(data.get("expires_at"))
         return False
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieves a value from the cache by key.
 
-        If the key does not exist or the entry has expired, returns None. If the
+        If the key does not exist or the entry has expired, returns default. If the
         entry is expired, it is not automatically deleted.
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found or expired.
+            Any: The cached Python object, or default if not found or expired.
 
         Notes:
             - The value is deserialized using pickle.
@@ -296,9 +298,8 @@ class FirestoreBackend(CacheBackend):
                 try:
                     return pickle.loads(data["value"])
                 except (pickle.UnpicklingError, KeyError):
-                    # Handle potential deserialization errors or missing value field
-                    return None
-        return None
+                    return default
+        return default
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -499,7 +500,7 @@ class FirestoreBackend(CacheBackend):
             count += 1
             if count == 500:
                 batch.commit()
-                batch = self._async_db.batch()
+                batch = self._sync_db.batch()
                 count = 0
         if count > 0:
             batch.commit()

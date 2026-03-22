@@ -61,23 +61,24 @@ class MongoDBBackend(CacheBackend):
         """
         return f"{self._namespace}:{key}"
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
             key (str): The cache key.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found or expired.
+            Any: The cached value, or default if not found or expired.
         """
         doc = self._sync_collection.find_one({"_id": self._make_key(key)})
         if doc and (doc.get("expires_at", float("inf")) > time.time()):
             try:
                 return pickle.loads(doc["value"])
             except Exception:
-                return None
-        return None
+                return default
+        return default
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -128,23 +129,24 @@ class MongoDBBackend(CacheBackend):
         doc = self._sync_collection.find_one({"_id": self._make_key(key)})
         return bool(doc and (doc.get("expires_at", float("inf")) > time.time()))
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
             key (str): The cache key.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found or expired.
+            Any: The cached value, or default if not found or expired.
         """
         doc = await self._async_collection.find_one({"_id": self._make_key(key)})
         if doc and (doc.get("expires_at", float("inf")) > time.time()):
             try:
                 return pickle.loads(doc["value"])
             except Exception:
-                return None
-        return None
+                return default
+        return default
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None

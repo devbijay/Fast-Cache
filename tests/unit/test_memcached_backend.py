@@ -74,3 +74,23 @@ async def test_async_expire(memcached_cache):
     assert await memcached_cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await memcached_cache.aget("foo") is None
+
+
+# ---- DEFAULT PARAMETER TESTS ----
+def test_get_default_parameter(memcached_cache):
+    """get() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert memcached_cache.get("nonexistent", default=sentinel) is sentinel
+    assert memcached_cache.get("nonexistent") is None
+    memcached_cache.set("null_key", None)
+    assert memcached_cache.get("null_key", default=sentinel) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_default_parameter(memcached_cache):
+    """aget() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    assert await memcached_cache.aget("nonexistent", default=sentinel) is sentinel
+    assert await memcached_cache.aget("nonexistent") is None
+    await memcached_cache.aset("null_key", None)
+    assert await memcached_cache.aget("null_key", default=sentinel) is None

@@ -12,28 +12,30 @@ class CacheBackend(ABC):
     """
 
     @abstractmethod
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         pass
 
     @abstractmethod
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         pass
 

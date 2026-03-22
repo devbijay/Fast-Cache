@@ -1,3 +1,4 @@
+import asyncio
 import pickle
 import re
 import threading
@@ -91,6 +92,7 @@ class PostgresBackend(CacheBackend):
 
         self._scheduler = None
         self._scheduler_lock = threading.Lock()
+        self._async_pool_lock = asyncio.Lock()
 
         if self._auto_cleanup:
             self._start_cleanup_scheduler()
@@ -236,18 +238,19 @@ class PostgresBackend(CacheBackend):
                 )
                 conn.commit()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Retrieves a value from the cache by key.
 
-        If the key does not exist or the entry has expired, returns None. If the
+        If the key does not exist or the entry has expired, returns default. If the
         entry is expired, it is deleted from the cache (lazy deletion).
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found or expired.
+            Any: The cached Python object, or default if not found or expired.
 
         Notes:
             - The value is deserialized using pickle.
@@ -261,11 +264,11 @@ class PostgresBackend(CacheBackend):
                 )
                 row = cur.fetchone()
                 if not row:
-                    return None
+                    return default
                 value, expire_at = row
                 if self._is_expired(expire_at):
                     self.delete(key)  # Lazy delete
-                    return None
+                    return default
                 return pickle.loads(value)
 
     def delete(self, key: str) -> None:
@@ -371,18 +374,19 @@ class PostgresBackend(CacheBackend):
                 )
                 await conn.commit()
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieves a value from the cache by key.
 
-        If the key does not exist or the entry has expired, returns None. If the
+        If the key does not exist or the entry has expired, returns default. If the
         entry is expired, it is deleted from the cache (lazy deletion).
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found or expired.
+            Any: The cached Python object, or default if not found or expired.
 
         Notes:
             - Uses the asynchronous connection pool.
@@ -398,11 +402,11 @@ class PostgresBackend(CacheBackend):
                 )
                 row = await cur.fetchone()
                 if not row:
-                    return None
+                    return default
                 value, expire_at = row
                 if self._is_expired(expire_at):
                     await self.adelete(key)  # Lazy delete
-                    return None
+                    return default
                 return pickle.loads(value)
 
     async def adelete(self, key: str) -> None:
@@ -537,10 +541,15 @@ class PostgresBackend(CacheBackend):
         Ensures that the asynchronous connection pool is open before use.
 
         If the pool is not already open, it is opened asynchronously.
+        Uses a lock to prevent concurrent coroutines from racing to open
+        the pool simultaneously.
 
         Notes:
             - Used internally by all asynchronous methods.
             - Prevents errors from using a closed or uninitialized pool.
         """
-        if not self._async_pool._opened:
-            await self._async_pool.open()
+        if self._async_pool._opened:
+            return
+        async with self._async_pool_lock:
+            if not self._async_pool._opened:
+                await self._async_pool.open()
