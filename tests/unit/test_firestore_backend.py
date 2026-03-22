@@ -177,3 +177,51 @@ async def test_async_expire(firestore_backend):
 
     with patch("time.time", return_value=1000):  # Current time > expires_at
         assert await firestore_backend.aget("foo") is None
+
+
+# ---- DEFAULT PARAMETER TESTS ----
+def test_get_default_parameter(firestore_backend):
+    """get() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    doc_ref = MagicMock()
+    firestore_backend._sync_db.collection.return_value.document.return_value = doc_ref
+
+    # Missing key: doc doesn't exist
+    doc_ref.get.return_value.exists = False
+    assert firestore_backend.get("nonexistent", default=sentinel) is sentinel
+    assert firestore_backend.get("nonexistent") is None
+
+    # Stored None: doc exists with pickled None
+    doc_ref.get.return_value.exists = True
+    doc_ref.get.return_value.to_dict.return_value = {
+        "value": b"pickled-none",
+        "expires_at": None,
+    }
+    with patch("pickle.loads", return_value=None):
+        assert firestore_backend.get("null_key", default=sentinel) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_default_parameter(firestore_backend):
+    """aget() returns default on miss, None by default for backward compat, and distinguishes stored None from a miss."""
+    sentinel = object()
+    doc_ref = MagicMock()
+    firestore_backend._async_db.collection.return_value.document.return_value = doc_ref
+
+    # Missing key: doc doesn't exist
+    mock_doc_missing = MagicMock()
+    mock_doc_missing.exists = False
+    doc_ref.get = AsyncMock(return_value=mock_doc_missing)
+    assert await firestore_backend.aget("nonexistent", default=sentinel) is sentinel
+    assert await firestore_backend.aget("nonexistent") is None
+
+    # Stored None: doc exists with pickled None
+    mock_doc_exists = MagicMock()
+    mock_doc_exists.exists = True
+    mock_doc_exists.to_dict.return_value = {
+        "value": b"pickled-none",
+        "expires_at": None,
+    }
+    doc_ref.get = AsyncMock(return_value=mock_doc_exists)
+    with patch("pickle.loads", return_value=None):
+        assert await firestore_backend.aget("null_key", default=sentinel) is None

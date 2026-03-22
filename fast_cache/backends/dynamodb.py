@@ -237,60 +237,62 @@ class DynamoDBBackend(CacheBackend):
 
         return item
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             response = self._sync_table.get_item(Key={"cache_key": self._make_key(key)})
 
             if "Item" not in response:
-                return None
+                return default
 
             item = response["Item"]
 
             # Check if item has expired and delete if so
             if self._is_expired(item):
                 self.delete(key)
-                return None
+                return default
             value = self._deserialize_value(item["value"])
             return value
         except Exception:
-            return None
+            return default
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieve a value from the cache.
 
         Args:
             key (str): The key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached value, or None if not found.
+            Any: The cached value, or default if not found.
         """
         try:
             table = await self._get_async_table()
             response = await table.get_item(Key={"cache_key": self._make_key(key)})
 
             if "Item" not in response:
-                return None
+                return default
 
             item = response["Item"]
 
             # Check if item has expired and delete if so
             if self._is_expired(item):
                 await self.adelete(key)
-                return None
+                return default
 
             return self._deserialize_value(item["value"])
         except Exception:
-            return None
+            return default
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None

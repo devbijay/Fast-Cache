@@ -6,6 +6,8 @@ import inspect
 from functools import wraps
 from .backends.backend import CacheBackend
 
+_CACHE_MISS = object()
+
 
 class FastAPICache:
     """
@@ -111,8 +113,8 @@ class FastAPICache:
                 cache_key = build_cache_key(*args, **kwargs)
 
                 # Try to get from cache
-                cached_value = await self._backend.aget(cache_key)
-                if cached_value is not None:
+                cached_value = await self._backend.aget(cache_key, default=_CACHE_MISS)
+                if cached_value is not _CACHE_MISS:
                     return cached_value
 
                 # Execute function and cache result
@@ -144,8 +146,8 @@ class FastAPICache:
                 cache_key = build_cache_key(*args, **kwargs)
 
                 # Try to get from cache
-                cached_value = self._backend.get(cache_key)
-                if cached_value is not None:
+                cached_value = self._backend.get(cache_key, default=_CACHE_MISS)
+                if cached_value is not _CACHE_MISS:
                     return cached_value
 
                 # Execute function and cache result

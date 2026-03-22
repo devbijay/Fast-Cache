@@ -80,17 +80,18 @@ class MemcachedBackend(CacheBackend):
         """
         return f"{self._namespace}:{key}".encode()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Synchronously retrieves a value from the cache by key.
 
-        If the key does not exist, returns None.
+        If the key does not exist, returns default.
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found.
+            Any: The cached Python object, or default if not found.
 
         Notes:
             - The value is deserialized using pickle.
@@ -99,9 +100,9 @@ class MemcachedBackend(CacheBackend):
         """
         try:
             value = self._sync_client.get(self._make_key(key))
-            return pickle.loads(value) if value else None
+            return pickle.loads(value) if value else default
         except Exception:
-            return None
+            return default
 
     def set(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
@@ -192,17 +193,18 @@ class MemcachedBackend(CacheBackend):
         except Exception:
             return False
 
-    async def aget(self, key: str) -> Optional[Any]:
+    async def aget(self, key: str, default: Any = None) -> Any:
         """
         Asynchronously retrieves a value from the cache by key.
 
-        If the key does not exist, returns None.
+        If the key does not exist, returns default.
 
         Args:
             key (str): The cache key to retrieve.
+            default (Any): Value to return if key is not found. Defaults to None.
 
         Returns:
-            Optional[Any]: The cached Python object, or None if not found.
+            Any: The cached Python object, or default if not found.
 
         Notes:
             - The value is deserialized using pickle.
@@ -211,9 +213,9 @@ class MemcachedBackend(CacheBackend):
         """
         try:
             value = await self._async_client.get(self._make_key(key))
-            return pickle.loads(value) if value else None
+            return pickle.loads(value) if value else default
         except Exception:
-            return None
+            return default
 
     async def aset(
         self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
