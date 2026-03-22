@@ -123,15 +123,14 @@ class InMemoryBackend(CacheBackend):
             - Only entries with a non-null expiration time and an expiration
               time earlier than the current time are deleted.
         """
-        while True:
-            now = time.monotonic()
-            keys_to_delete = [
-                k
-                for k, (_, exp) in list(self._cache.items())
-                if exp is not None and now > exp
-            ]
-            for k in keys_to_delete:
-                self._cache.pop(k, None)
+        now = time.monotonic()
+        keys_to_delete = [
+            k
+            for k, (_, exp) in list(self._cache.items())
+            if exp is not None and now > exp
+        ]
+        for k in keys_to_delete:
+            self._cache.pop(k, None)
 
     def _make_key(self, key: str) -> str:
         """
