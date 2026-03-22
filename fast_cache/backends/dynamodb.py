@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 from typing import Any, Optional, Union
@@ -82,13 +83,18 @@ class DynamoDBBackend(CacheBackend):
         self._async_resource = None
         self._async_table = None
         self._async_session = aioboto3.Session()
+        self._async_table_lock = asyncio.Lock()
 
         # Create table if requested
         if create_table:
             self._ensure_table_exists()
 
     async def _get_async_table(self):
-        if self._async_table is None:
+        if self._async_table is not None:
+            return self._async_table
+        async with self._async_table_lock:
+            if self._async_table is not None:
+                return self._async_table
             # Create the resource context manager
             self._async_resource = self._async_session.resource(
                 "dynamodb", **self._connection_params

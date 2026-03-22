@@ -1,3 +1,4 @@
+import asyncio
 import pickle
 import re
 import threading
@@ -91,6 +92,7 @@ class PostgresBackend(CacheBackend):
 
         self._scheduler = None
         self._scheduler_lock = threading.Lock()
+        self._async_pool_lock = asyncio.Lock()
 
         if self._auto_cleanup:
             self._start_cleanup_scheduler()
@@ -539,10 +541,15 @@ class PostgresBackend(CacheBackend):
         Ensures that the asynchronous connection pool is open before use.
 
         If the pool is not already open, it is opened asynchronously.
+        Uses a lock to prevent concurrent coroutines from racing to open
+        the pool simultaneously.
 
         Notes:
             - Used internally by all asynchronous methods.
             - Prevents errors from using a closed or uninitialized pool.
         """
-        if not self._async_pool._opened:
-            await self._async_pool.open()
+        if self._async_pool._opened:
+            return
+        async with self._async_pool_lock:
+            if not self._async_pool._opened:
+                await self._async_pool.open()
