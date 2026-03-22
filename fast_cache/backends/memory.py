@@ -459,4 +459,4 @@ class InMemoryBackend(CacheBackend):
             - The background cleanup scheduler is stopped.
         """
         self._stop_cleanup_scheduler()
-        self._cache = None
+        self._cache.clear()
