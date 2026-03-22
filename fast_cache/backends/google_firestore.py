@@ -499,7 +499,7 @@ class FirestoreBackend(CacheBackend):
             count += 1
             if count == 500:
                 batch.commit()
-                batch = self._async_db.batch()
+                batch = self._sync_db.batch()
                 count = 0
         if count > 0:
             batch.commit()
