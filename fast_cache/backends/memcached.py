@@ -1,10 +1,17 @@
+import hashlib
 import logging
 import pickle
+import re
 from typing import Any, Optional, Union
 from datetime import timedelta
 from .backend import CacheBackend
 
 logger = logging.getLogger(__name__)
+
+# Memcached keys are limited to 250 bytes and may not contain whitespace or
+# control characters. Matches the validation done by pymemcache and aiomcache.
+_MAX_KEY_LENGTH = 250
+_INVALID_KEY_CHARS = re.compile(r"[\s\x00-\x1f\x7f-\x9f]")
 
 
 class MemcachedBackend(CacheBackend):
@@ -80,8 +87,19 @@ class MemcachedBackend(CacheBackend):
         Notes:
             - All cache operations use namespaced keys internally.
             - Ensures key separation between different namespaces.
+            - Keys Memcached would reject (too long, whitespace or control
+              characters) are replaced with a SHA-256 hash of the key.
         """
-        return f"{self._namespace}:{key}".encode()
+        namespaced_key = f"{self._namespace}:{key}"
+        encoded_key = namespaced_key.encode()
+
+        if len(encoded_key) > _MAX_KEY_LENGTH or _INVALID_KEY_CHARS.search(
+            namespaced_key
+        ):
+            key_hash = hashlib.sha256(key.encode()).hexdigest()
+            encoded_key = f"{self._namespace}:hash:{key_hash}".encode()
+
+        return encoded_key
 
     def get(self, key: str, default: Any = None) -> Any:
         """
