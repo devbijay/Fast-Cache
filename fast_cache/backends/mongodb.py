@@ -213,10 +213,10 @@ class MongoDBBackend(CacheBackend):
         await self._async_client.close()
 
     @staticmethod
-    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[float]:
         if expire is not None:
             if isinstance(expire, timedelta):
-                return int(time.time() + expire.total_seconds())
+                return time.time() + expire.total_seconds()
             else:
-                return int(time.time() + expire)
+                return time.time() + expire
         return None

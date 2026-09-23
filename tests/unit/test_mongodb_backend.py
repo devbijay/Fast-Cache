@@ -1,4 +1,6 @@
+import math
 import uuid
+from unittest.mock import patch
 
 import pytest
 import asyncio
@@ -53,6 +55,21 @@ def test_expire(cache):
     assert cache.get("foo") is None
 
 
+def test_expire_keeps_sub_second_precision(cache):
+    """An entry set late in a second stays valid for its full expire duration."""
+    now = math.floor(time.time()) + 0.9
+    with patch("fast_cache.backends.mongodb.time") as mock_time:
+        mock_time.time.return_value = now
+        cache.set("foo", "bar", expire=1)
+
+        mock_time.time.return_value = now + 0.5
+        assert cache.has("foo")
+        assert cache.get("foo") == "bar"
+
+        mock_time.time.return_value = now + 1.01
+        assert cache.get("foo") is None
+
+
 # ---- ASYNC TESTS ----
 @pytest.mark.asyncio
 async def test_async_set_and_get(cache):
@@ -90,6 +107,22 @@ async def test_async_expire(cache):
     assert await cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await cache.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_expire_keeps_sub_second_precision(cache):
+    """An entry set late in a second stays valid for its full expire duration."""
+    now = math.floor(time.time()) + 0.9
+    with patch("fast_cache.backends.mongodb.time") as mock_time:
+        mock_time.time.return_value = now
+        await cache.aset("foo", "bar", expire=1)
+
+        mock_time.time.return_value = now + 0.5
+        assert await cache.ahas("foo")
+        assert await cache.aget("foo") == "bar"
+
+        mock_time.time.return_value = now + 1.01
+        assert await cache.aget("foo") is None
 
 
 # ---- DEFAULT PARAMETER TESTS ----

@@ -85,7 +85,7 @@ class FirestoreBackend(CacheBackend):
             self._start_cleanup_scheduler()
 
     @staticmethod
-    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[float]:
         """
         Computes the expiration timestamp for a cache entry.
 
@@ -94,7 +94,7 @@ class FirestoreBackend(CacheBackend):
                 an integer (seconds) or a timedelta. If None, the entry does not expire.
 
         Returns:
-            Optional[int]: The expiration time as a Unix epoch timestamp in seconds,
+            Optional[float]: The expiration time as a Unix epoch timestamp in seconds,
             or None if no expiration is set.
 
         Notes:
@@ -103,9 +103,9 @@ class FirestoreBackend(CacheBackend):
         """
         if expire is not None:
             if isinstance(expire, timedelta):
-                return int(time.time() + expire.total_seconds())
+                return time.time() + expire.total_seconds()
             else:
-                return int(time.time() + expire)
+                return time.time() + expire
         return None
 
     def _make_key(self, key: str) -> str:
@@ -132,12 +132,12 @@ class FirestoreBackend(CacheBackend):
         hashed_key = hashlib.sha256(f"{self._namespace}:{key}".encode()).hexdigest()
         return hashed_key
 
-    def _is_expired(self, expires_at: Optional[int]) -> bool:
+    def _is_expired(self, expires_at: Optional[float]) -> bool:
         """
         Checks if a cache entry is expired.
 
         Args:
-            expires_at (Optional[int]): The expiration time as a Unix epoch timestamp in seconds.
+            expires_at (Optional[float]): The expiration time as a Unix epoch timestamp in seconds.
 
         Returns:
             bool: True if the entry is expired, False otherwise.

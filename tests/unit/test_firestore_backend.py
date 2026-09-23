@@ -91,6 +91,16 @@ def test_expire(firestore_backend):
         assert firestore_backend.get("foo") is None
 
 
+def test_expire_keeps_sub_second_precision(firestore_backend):
+    doc_ref = MagicMock()
+    firestore_backend._sync_db.collection.return_value.document.return_value = doc_ref
+
+    with patch("time.time", return_value=1000.9):
+        firestore_backend.set("foo", "bar", expire=1)
+
+    assert doc_ref.set.call_args[0][0]["expires_at"] == pytest.approx(1001.9)
+
+
 # ---- ASYNC TESTS ----
 @pytest.mark.asyncio
 async def test_async_set_and_get(firestore_backend):
@@ -177,6 +187,18 @@ async def test_async_expire(firestore_backend):
 
     with patch("time.time", return_value=1000):  # Current time > expires_at
         assert await firestore_backend.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_expire_keeps_sub_second_precision(firestore_backend):
+    doc_ref = MagicMock()
+    doc_ref.set = AsyncMock()
+    firestore_backend._async_db.collection.return_value.document.return_value = doc_ref
+
+    with patch("time.time", return_value=1000.9):
+        await firestore_backend.aset("foo", "bar", expire=1)
+
+    assert doc_ref.set.call_args[0][0]["expires_at"] == pytest.approx(1001.9)
 
 
 # ---- DEFAULT PARAMETER TESTS ----

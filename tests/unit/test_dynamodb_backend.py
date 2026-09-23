@@ -1,5 +1,7 @@
 import logging
+import math
 import uuid
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -89,6 +91,41 @@ def test_expire(cache):
     assert cache.get("foo") is None
 
 
+def test_expire_keeps_sub_second_precision(cache):
+    """An entry set late in a second stays valid for its full expire duration."""
+    now = math.floor(time.time()) + 0.9
+    with patch("fast_cache.backends.dynamodb.time") as mock_time:
+        mock_time.time.return_value = now
+        cache.set("foo", "bar", expire=1)
+
+        mock_time.time.return_value = now + 0.5
+        assert cache.has("foo")
+        assert cache.get("foo") == "bar"
+
+        mock_time.time.return_value = now + 1.01
+        assert cache.get("foo") is None
+
+
+def test_expire_falls_back_to_ttl_attribute(cache):
+    """Items written without expires_at still expire based on ttl."""
+    cache._sync_table.put_item(
+        Item={
+            "cache_key": cache._make_key("live"),
+            "value": cache._serialize_value("bar"),
+            "ttl": int(time.time()) + 60,
+        }
+    )
+    cache._sync_table.put_item(
+        Item={
+            "cache_key": cache._make_key("expired"),
+            "value": cache._serialize_value("bar"),
+            "ttl": int(time.time()) - 1,
+        }
+    )
+    assert cache.get("live") == "bar"
+    assert cache.get("expired") is None
+
+
 # ---- ASYNC TESTS ----
 @pytest.mark.asyncio
 async def test_async_set_and_get(async_cache):
@@ -128,6 +165,22 @@ async def test_async_expire(async_cache):
     assert await async_cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await async_cache.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_expire_keeps_sub_second_precision(async_cache):
+    """An entry set late in a second stays valid for its full expire duration."""
+    now = math.floor(time.time()) + 0.9
+    with patch("fast_cache.backends.dynamodb.time") as mock_time:
+        mock_time.time.return_value = now
+        await async_cache.aset("foo", "bar", expire=1)
+
+        mock_time.time.return_value = now + 0.5
+        assert await async_cache.ahas("foo")
+        assert await async_cache.aget("foo") == "bar"
+
+        mock_time.time.return_value = now + 1.01
+        assert await async_cache.aget("foo") is None
 
 
 # ---- DEFAULT PARAMETER TESTS ----
