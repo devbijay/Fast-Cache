@@ -3,6 +3,7 @@ import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from fastapi import FastAPI
 from fast_cache import FastAPICache, RedisBackend
 
@@ -56,6 +57,20 @@ def test_expire(cache):
     assert cache.get("foo") is None
 
 
+def test_expire_timedelta(cache):
+    cache.set("foo", "bar", expire=timedelta(seconds=1))
+    assert cache.get("foo") == "bar"
+    time.sleep(1.1)
+    assert cache.get("foo") is None
+
+
+def test_expire_sub_second_timedelta(cache):
+    cache.set("foo", "bar", expire=timedelta(milliseconds=500))
+    assert cache.get("foo") == "bar"
+    time.sleep(0.6)
+    assert cache.get("foo") is None
+
+
 # ---- ASYNC TESTS ----
 @pytest.mark.asyncio
 async def test_async_set_and_get(cache):
@@ -92,6 +107,22 @@ async def test_async_expire(cache):
     await cache.aset("foo", "bar", expire=1)
     assert await cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
+    assert await cache.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_expire_timedelta(cache):
+    await cache.aset("foo", "bar", expire=timedelta(seconds=1))
+    assert await cache.aget("foo") == "bar"
+    await asyncio.sleep(1.1)
+    assert await cache.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_expire_sub_second_timedelta(cache):
+    await cache.aset("foo", "bar", expire=timedelta(milliseconds=500))
+    assert await cache.aget("foo") == "bar"
+    await asyncio.sleep(0.6)
     assert await cache.aget("foo") is None
 
 

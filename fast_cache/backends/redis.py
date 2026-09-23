@@ -86,6 +86,21 @@ class RedisBackend(CacheBackend):
         """
         return f"{self._namespace}:{key}"
 
+    @staticmethod
+    def _expire_args(expire: Optional[Union[int, timedelta]]) -> dict:
+        """
+        Build the expiration arguments for a Redis SET command.
+
+        Args:
+            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
+
+        Returns:
+            dict: ``px`` for timedeltas (millisecond precision), ``ex`` otherwise.
+        """
+        if isinstance(expire, timedelta):
+            return {"px": expire}
+        return {"ex": expire}
+
     async def _scan_keys(self, pattern: str = "*") -> list[str]:
         """
         Scan all keys in the namespace asynchronously.
@@ -157,9 +172,8 @@ class RedisBackend(CacheBackend):
             expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
         """
         try:
-            ex = expire.total_seconds() if isinstance(expire, timedelta) else expire
             await self._async_client.set(
-                self._make_key(key), pickle.dumps(value), ex=ex
+                self._make_key(key), pickle.dumps(value), **self._expire_args(expire)
             )
         except Exception as e:
             logger.warning("Cache aset failed: %s", e)
@@ -176,8 +190,9 @@ class RedisBackend(CacheBackend):
             expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
         """
         try:
-            ex = expire.total_seconds() if isinstance(expire, timedelta) else expire
-            self._sync_client.set(self._make_key(key), pickle.dumps(value), ex=ex)
+            self._sync_client.set(
+                self._make_key(key), pickle.dumps(value), **self._expire_args(expire)
+            )
         except Exception as e:
             logger.warning("Cache set failed: %s", e)
 
