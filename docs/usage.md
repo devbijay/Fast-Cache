@@ -84,6 +84,56 @@ async def get_profile(
 
 ---
 
+## 4️⃣ Stampede Protection
+
+When a popular key expires, many concurrent requests can miss the cache at once and all run the expensive function. With stampede protection, one request rebuilds the value while the others wait for it.
+
+```python
+@app.get("/report")
+@cache.cached(
+    expire=300,
+    stampede_protection=True,  # default
+    lock_timeout=30,           # lock auto-expires after 30 seconds
+    lock_wait=5.0,             # max seconds to wait for another request's result
+)
+async def build_report():
+    return await generate_report()
+```
+
+- Enabled by default. Requires a backend with distributed locking (`RedisBackend`); other backends skip it.
+- Waiting requests return the value as soon as it is cached. If it is not ready within `lock_wait`, they run the function themselves without caching the result.
+- Set `lock_timeout` longer than the function usually takes, so the lock is not released while the value is still being built.
+- Disable per function with `stampede_protection=False`.
+
+---
+
+## 5️⃣ Lifespan Integration
+
+Pass `cache.lifespan_handler` to FastAPI to close the backend's connections when the app shuts down.
+
+```python
+from fastapi import FastAPI
+from fast_cache import cache, RedisBackend
+
+app = FastAPI(lifespan=cache.lifespan_handler)
+cache.init_app(app, RedisBackend(redis_url="redis://localhost:6379/0"))
+```
+
+- On startup, the cache is available as `app.state.cache`.
+- On shutdown, the backend is closed and detached. Call `init_app` again before restarting the app in the same process (for example, across multiple `TestClient` sessions in tests).
+
+---
+
+## 6️⃣ Backend Failures
+
+A cache outage never breaks a decorated endpoint. If the backend raises an error inside `@cache.cached()`, the error is logged and your function runs as if caching were disabled.
+
+- Errors raised by your own function are not affected and propagate as usual.
+- Failures are logged as warnings under the `fast_cache` logger.
+- When calling the backend directly through dependency injection, handle errors yourself; some backends (Postgres, MongoDB, Firestore) raise on connection failures.
+
+---
+
 ## 🔗 Next Steps
 
 - [API Reference](api.md)
