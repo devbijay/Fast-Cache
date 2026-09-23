@@ -1,10 +1,13 @@
 import time
+from unittest.mock import AsyncMock
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from testcontainers.redis import RedisContainer
 
 from examples.main import app
-from fast_cache import RedisBackend, cache
+from fast_cache import FastAPICache, RedisBackend, cache
 
 
 @pytest.fixture
@@ -147,3 +150,22 @@ def test_weather_skip_cache(client):
     resp3 = client.get("/weather", params={"city": "London", "skip_cache": True})
     assert resp3.status_code == 200
     assert resp3.json()["weather"] == val1
+
+
+def test_lifespan_handler_closes_backend(redis_url):
+    lifespan_cache = FastAPICache()
+    lifespan_app = FastAPI(lifespan=lifespan_cache.lifespan_handler)
+    backend = RedisBackend(redis_url, namespace="lifespan-demo")
+    backend.close = AsyncMock(wraps=backend.close)
+    lifespan_cache.init_app(app=lifespan_app, backend=backend)
+
+    @lifespan_app.get("/items/{item_id}")
+    @lifespan_cache.cached(expire=60)
+    async def get_item(item_id: int):
+        return {"item_id": item_id}
+
+    with TestClient(lifespan_app) as lifespan_client:
+        resp = lifespan_client.get("/items/1")
+        assert resp.json() == {"item_id": 1}
+
+    backend.close.assert_awaited_once()

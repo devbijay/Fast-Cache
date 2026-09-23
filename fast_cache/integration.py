@@ -290,7 +290,9 @@ class FastAPICache:
                 else:
                     close = getattr(self._backend, "close", None)
                     if close:
-                        close()
+                        result = close()
+                        if inspect.isawaitable(result):
+                            await result
 
             self._backend = None
             self._app = None
