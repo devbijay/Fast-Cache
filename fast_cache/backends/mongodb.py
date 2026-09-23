@@ -4,6 +4,8 @@ from typing import Any, Optional, Union
 from datetime import datetime, timedelta, timezone
 from .backend import CacheBackend
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
 
 class MongoDBBackend(CacheBackend):
     """
@@ -231,13 +233,30 @@ class MongoDBBackend(CacheBackend):
                 "$unset": {"expires_at": "", "expires_at_date": ""},
             }
 
-        return {
-            "$set": {
-                "value": pickle.dumps(value),
-                "expires_at": expires_at,
-                "expires_at_date": datetime.fromtimestamp(expires_at, tz=timezone.utc),
-            }
-        }
+        update = {"$set": {"value": pickle.dumps(value), "expires_at": expires_at}}
+        expires_at_date = self._to_ttl_date(expires_at)
+        if expires_at_date is None:
+            update["$unset"] = {"expires_at_date": ""}
+        else:
+            update["$set"]["expires_at_date"] = expires_at_date
+        return update
+
+    @staticmethod
+    def _to_ttl_date(expires_at: float) -> Optional[datetime]:
+        """
+        Convert an epoch timestamp to a date for the TTL index.
+
+        Args:
+            expires_at (float): Expiration time as a Unix epoch timestamp in seconds.
+
+        Returns:
+            Optional[datetime]: The UTC date, or None if it is beyond the supported
+            date range. Such entries still expire through ``expires_at`` on read.
+        """
+        try:
+            return _EPOCH + timedelta(seconds=expires_at)
+        except OverflowError:
+            return None
 
     @staticmethod
     def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[float]:

@@ -78,6 +78,21 @@ def test_expire_stores_ttl_date(cache):
     assert expires_at_date.timestamp() == pytest.approx(doc["expires_at"], abs=0.001)
 
 
+def test_expire_far_in_future(cache):
+    """Long expirations are stored; those past the supported date range skip the TTL date."""
+    cache.set("distant", "bar", expire=10**11)
+    cache.set("beyond_range", "bar", expire=10**12)
+    assert cache.get("distant") == "bar"
+    assert cache.get("beyond_range") == "bar"
+
+    distant = cache._sync_collection.find_one({"_id": cache._make_key("distant")})
+    beyond_range = cache._sync_collection.find_one(
+        {"_id": cache._make_key("beyond_range")}
+    )
+    assert "expires_at_date" in distant
+    assert "expires_at_date" not in beyond_range
+
+
 def test_ttl_monitor_removes_expired_documents(cache):
     """MongoDB's TTL monitor deletes expired entries from the collection."""
     admin = cache._sync_client.admin
