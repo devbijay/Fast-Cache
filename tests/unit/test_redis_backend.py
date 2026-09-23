@@ -1,7 +1,10 @@
 import pytest
 import asyncio
+import threading
 import time
-from fast_cache import RedisBackend
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI
+from fast_cache import FastAPICache, RedisBackend
 
 
 @pytest.fixture
@@ -10,6 +13,13 @@ def cache(redis_url):
     backend.clear()
     yield backend
     backend.clear()
+
+
+@pytest.fixture
+def fastapi_cache(cache):
+    instance = FastAPICache()
+    instance.init_app(FastAPI(), cache)
+    return instance
 
 
 # ---- SYNC TESTS ----
@@ -181,3 +191,116 @@ async def test_async_lock_auto_expires(cache):
     new_token = await cache.aacquire_lock("aexpiry", timeout=5, wait=0)
     assert new_token is not None
     await cache.arelease_lock("aexpiry", new_token)
+
+
+# ---- STAMPEDE TESTS (SYNC) ----
+def test_cached_sync_concurrent_misses_execute_once(fastapi_cache):
+    """Concurrent misses on the same key run the wrapped function once."""
+    calls = 0
+    calls_guard = threading.Lock()
+
+    @fastapi_cache.cached(expire=60)
+    def compute(x):
+        nonlocal calls
+        with calls_guard:
+            calls += 1
+        time.sleep(0.2)
+        return x * 2
+
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda _: compute(21), range(10)))
+    elapsed = time.monotonic() - started
+
+    assert results == [42] * 10
+    assert calls == 1
+    assert elapsed < 1.0
+
+
+def test_cached_sync_falls_back_after_lock_wait(fastapi_cache, cache):
+    """When the lock is held past lock_wait, the function runs uncached."""
+    calls = 0
+
+    @fastapi_cache.cached(expire=60, lock_wait=0.2)
+    def compute():
+        nonlocal calls
+        calls += 1
+        return "fresh"
+
+    cache_key = f"{compute.__module__}:{compute.__name__}:():{{}}"
+    token = cache.acquire_lock(cache_key, timeout=5, wait=0)
+    try:
+        assert compute() == "fresh"
+    finally:
+        cache.release_lock(cache_key, token)
+
+    assert calls == 1
+    assert cache.get(cache_key) is None
+
+
+# ---- STAMPEDE TESTS (ASYNC) ----
+@pytest.mark.asyncio
+async def test_cached_async_concurrent_misses_execute_once(fastapi_cache):
+    """Concurrent misses on the same key run the wrapped function once."""
+    calls = 0
+
+    @fastapi_cache.cached(expire=60)
+    async def compute(x):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.2)
+        return x * 2
+
+    started = time.monotonic()
+    results = await asyncio.gather(*(compute(21) for _ in range(10)))
+    elapsed = time.monotonic() - started
+
+    assert results == [42] * 10
+    assert calls == 1
+    assert elapsed < 1.0
+
+
+@pytest.mark.asyncio
+async def test_cached_async_waiter_takes_over_when_holder_fails(fastapi_cache):
+    """A waiter recomputes as soon as a failed holder releases the lock."""
+    calls = 0
+
+    @fastapi_cache.cached(expire=60, lock_wait=5.0)
+    async def compute():
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.1)
+        if calls == 1:
+            raise RuntimeError("boom")
+        return "ok"
+
+    started = time.monotonic()
+    results = await asyncio.gather(compute(), compute(), return_exceptions=True)
+    elapsed = time.monotonic() - started
+
+    assert isinstance(results[0], RuntimeError)
+    assert results[1] == "ok"
+    assert calls == 2
+    assert elapsed < 1.0
+
+
+@pytest.mark.asyncio
+async def test_cached_async_falls_back_after_lock_wait(fastapi_cache, cache):
+    """When the lock is held past lock_wait, the function runs uncached."""
+    calls = 0
+
+    @fastapi_cache.cached(expire=60, lock_wait=0.2)
+    async def compute():
+        nonlocal calls
+        calls += 1
+        return "fresh"
+
+    cache_key = f"{compute.__module__}:{compute.__name__}:():{{}}"
+    token = await cache.aacquire_lock(cache_key, timeout=5, wait=0)
+    try:
+        assert await compute() == "fresh"
+    finally:
+        await cache.arelease_lock(cache_key, token)
+
+    assert calls == 1
+    assert await cache.aget(cache_key) is None

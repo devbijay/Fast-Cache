@@ -2,11 +2,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from typing import Optional, Callable, Union, AsyncIterator, Any
 from datetime import timedelta
+import asyncio
 import inspect
+import time
 from functools import wraps
 from .backends.backend import CacheBackend
 
 _CACHE_MISS = object()
+
+# Delay between cache/lock checks while another caller rebuilds the value.
+_LOCK_POLL_INTERVAL = 0.05
 
 
 class FastAPICache:
@@ -136,30 +141,39 @@ class FastAPICache:
 
                 # Stampede protection: distributed lock
                 if stampede_protection and _backend_supports_locking():
-                    token = await self._backend.aacquire_lock(
-                        cache_key, timeout=lock_timeout, wait=lock_wait
-                    )
+                    deadline = time.monotonic() + lock_wait
+                    while True:
+                        token = await self._backend.aacquire_lock(
+                            cache_key, timeout=lock_timeout, wait=0
+                        )
+                        if token is not None:
+                            try:
+                                # The previous lock holder may have already
+                                # populated the cache.
+                                cached_value = await self._backend.aget(
+                                    cache_key, default=_CACHE_MISS
+                                )
+                                if cached_value is not _CACHE_MISS:
+                                    return cached_value
 
-                    if token is not None:
-                        # We are the lock holder — rebuild the value
-                        try:
-                            result = await func(*args, **kwargs)
-                            await self._backend.aset(
-                                cache_key, result, expire=effective_expire
-                            )
-                            return result
-                        finally:
-                            await self._backend.arelease_lock(cache_key, token)
-                    else:
-                        # Another process is rebuilding — check if it finished
+                                result = await func(*args, **kwargs)
+                                await self._backend.aset(
+                                    cache_key, result, expire=effective_expire
+                                )
+                                return result
+                            finally:
+                                await self._backend.arelease_lock(cache_key, token)
+
+                        if time.monotonic() >= deadline:
+                            # Lock holder is too slow; compute without caching.
+                            return await func(*args, **kwargs)
+
+                        await asyncio.sleep(_LOCK_POLL_INTERVAL)
                         cached_value = await self._backend.aget(
                             cache_key, default=_CACHE_MISS
                         )
                         if cached_value is not _CACHE_MISS:
                             return cached_value
-
-                        # Still no value — fallback: call function directly
-                        return await func(*args, **kwargs)
 
                 # No stampede protection — original behavior
                 result = await func(*args, **kwargs)
@@ -199,30 +213,39 @@ class FastAPICache:
 
                 # Stampede protection: distributed lock
                 if stampede_protection and _backend_supports_locking():
-                    token = self._backend.acquire_lock(
-                        cache_key, timeout=lock_timeout, wait=lock_wait
-                    )
+                    deadline = time.monotonic() + lock_wait
+                    while True:
+                        token = self._backend.acquire_lock(
+                            cache_key, timeout=lock_timeout, wait=0
+                        )
+                        if token is not None:
+                            try:
+                                # The previous lock holder may have already
+                                # populated the cache.
+                                cached_value = self._backend.get(
+                                    cache_key, default=_CACHE_MISS
+                                )
+                                if cached_value is not _CACHE_MISS:
+                                    return cached_value
 
-                    if token is not None:
-                        # We are the lock holder — rebuild the value
-                        try:
-                            result = func(*args, **kwargs)
-                            self._backend.set(
-                                cache_key, result, expire=effective_expire
-                            )
-                            return result
-                        finally:
-                            self._backend.release_lock(cache_key, token)
-                    else:
-                        # Another process is rebuilding — check if it finished
+                                result = func(*args, **kwargs)
+                                self._backend.set(
+                                    cache_key, result, expire=effective_expire
+                                )
+                                return result
+                            finally:
+                                self._backend.release_lock(cache_key, token)
+
+                        if time.monotonic() >= deadline:
+                            # Lock holder is too slow; compute without caching.
+                            return func(*args, **kwargs)
+
+                        time.sleep(_LOCK_POLL_INTERVAL)
                         cached_value = self._backend.get(
                             cache_key, default=_CACHE_MISS
                         )
                         if cached_value is not _CACHE_MISS:
                             return cached_value
-
-                        # Still no value — fallback: call function directly
-                        return func(*args, **kwargs)
 
                 # No stampede protection — original behavior
                 result = func(*args, **kwargs)
