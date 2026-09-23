@@ -85,7 +85,8 @@ async def expensive_operation(x: int):
   - `_id`: the cache key (optionally namespaced)
   - `value`: the pickled cached value
   - `expires_at`: epoch time when the entry should expire
-- A TTL index is created on the `expires_at` field.
+  - `expires_at_date`: the same expiration time as a date, used by the TTL index
+- A TTL index is created on the `expires_at_date` field.
 - Expired documents are deleted automatically by MongoDB’s TTL monitor.
 - Expiration is also checked in code to avoid returning stale data.
 

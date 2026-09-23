@@ -1,5 +1,6 @@
 import math
 import uuid
+from datetime import timezone
 from unittest.mock import patch
 
 import pytest
@@ -70,6 +71,38 @@ def test_expire_keeps_sub_second_precision(cache):
         assert cache.get("foo") is None
 
 
+def test_expire_stores_ttl_date(cache):
+    cache.set("foo", "bar", expire=60)
+    doc = cache._sync_collection.find_one({"_id": cache._make_key("foo")})
+    expires_at_date = doc["expires_at_date"].replace(tzinfo=timezone.utc)
+    assert expires_at_date.timestamp() == pytest.approx(doc["expires_at"], abs=0.001)
+
+
+def test_ttl_monitor_removes_expired_documents(cache):
+    """MongoDB's TTL monitor deletes expired entries from the collection."""
+    admin = cache._sync_client.admin
+    admin.command("setParameter", 1, ttlMonitorSleepSecs=1)
+    try:
+        cache.set("foo", "bar", expire=1)
+        key = cache._make_key("foo")
+        deadline = time.monotonic() + 10
+        while cache._sync_collection.find_one({"_id": key}) is not None:
+            assert time.monotonic() < deadline, "expired document was not removed"
+            time.sleep(0.5)
+    finally:
+        admin.command("setParameter", 1, ttlMonitorSleepSecs=60)
+
+
+def test_set_without_expire_clears_previous_expiration(cache):
+    cache.set("foo", "bar", expire=1)
+    cache.set("foo", "baz")
+    doc = cache._sync_collection.find_one({"_id": cache._make_key("foo")})
+    assert "expires_at" not in doc
+    assert "expires_at_date" not in doc
+    time.sleep(1.1)
+    assert cache.get("foo") == "baz"
+
+
 # ---- ASYNC TESTS ----
 @pytest.mark.asyncio
 async def test_async_set_and_get(cache):
@@ -123,6 +156,25 @@ async def test_async_expire_keeps_sub_second_precision(cache):
 
         mock_time.time.return_value = now + 1.01
         assert await cache.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_expire_stores_ttl_date(cache):
+    await cache.aset("foo", "bar", expire=60)
+    doc = await cache._async_collection.find_one({"_id": cache._make_key("foo")})
+    expires_at_date = doc["expires_at_date"].replace(tzinfo=timezone.utc)
+    assert expires_at_date.timestamp() == pytest.approx(doc["expires_at"], abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_async_set_without_expire_clears_previous_expiration(cache):
+    await cache.aset("foo", "bar", expire=1)
+    await cache.aset("foo", "baz")
+    doc = await cache._async_collection.find_one({"_id": cache._make_key("foo")})
+    assert "expires_at" not in doc
+    assert "expires_at_date" not in doc
+    await asyncio.sleep(1.1)
+    assert await cache.aget("foo") == "baz"
 
 
 # ---- DEFAULT PARAMETER TESTS ----
