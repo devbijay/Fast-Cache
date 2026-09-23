@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import logging
+import math
+from decimal import Decimal
 from typing import Any, Optional, Union
 from datetime import timedelta
 import pickle
@@ -161,15 +163,17 @@ class DynamoDBBackend(CacheBackend):
 
         return namespaced_key
 
-    def _get_ttl(self, expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+    def _get_expires_at(
+        self, expire: Optional[Union[int, timedelta]]
+    ) -> Optional[float]:
         """
-        Calculate TTL timestamp for DynamoDB.
+        Calculate the expiration timestamp for a cache entry.
 
         Args:
             expire (Optional[Union[int, timedelta]]): Expiration time.
 
         Returns:
-            Optional[int]: TTL timestamp or None if no expiration.
+            Optional[float]: Unix epoch timestamp in seconds, or None if no expiration.
         """
         if expire is None:
             return None
@@ -180,11 +184,14 @@ class DynamoDBBackend(CacheBackend):
         if expire <= 0:
             return None
 
-        return int(time.time()) + expire
+        return time.time() + expire
 
     def _is_expired(self, item: dict) -> bool:
         """
-        Check if an item has expired based on TTL.
+        Check if an item has expired.
+
+        Uses the precise ``expires_at`` attribute, falling back to ``ttl`` for
+        items written without it.
 
         Args:
             item (dict): DynamoDB item.
@@ -192,10 +199,11 @@ class DynamoDBBackend(CacheBackend):
         Returns:
             bool: True if expired, False otherwise.
         """
-        if "ttl" not in item:
+        expires_at = item.get("expires_at", item.get("ttl"))
+        if expires_at is None:
             return False
 
-        return time.time() > item["ttl"]
+        return time.time() > expires_at
 
     def _serialize_value(self, value: Any) -> bytes:
         """
@@ -240,9 +248,12 @@ class DynamoDBBackend(CacheBackend):
             "value": self._serialize_value(value),
         }
 
-        ttl = self._get_ttl(expire)
-        if ttl is not None:
-            item["ttl"] = ttl
+        expires_at = self._get_expires_at(expire)
+        if expires_at is not None:
+            # DynamoDB TTL only accepts whole seconds; round up so it never
+            # removes an item before it expires.
+            item["ttl"] = math.ceil(expires_at)
+            item["expires_at"] = Decimal(str(expires_at))
 
         return item
 
@@ -378,7 +389,7 @@ class DynamoDBBackend(CacheBackend):
         try:
             response = self._sync_table.get_item(
                 Key={"cache_key": self._make_key(key)},
-                ProjectionExpression="cache_key, #ttl",
+                ProjectionExpression="cache_key, #ttl, expires_at",
                 ExpressionAttributeNames={"#ttl": "ttl"},
             )
 
@@ -411,7 +422,7 @@ class DynamoDBBackend(CacheBackend):
             table = await self._get_async_table()
             response = await table.get_item(
                 Key={"cache_key": self._make_key(key)},
-                ProjectionExpression="cache_key, #ttl",
+                ProjectionExpression="cache_key, #ttl, expires_at",
                 ExpressionAttributeNames={"#ttl": "ttl"},
             )
 

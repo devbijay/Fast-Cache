@@ -234,7 +234,8 @@ class MyCustomBackend(CacheBackend):
 
 - `cache.init_app(app, backend, default_expire=None)` - Initialize cache with FastAPI app
 - `cache.get_cache()` - Get cache backend instance (for dependency injection)
-- `cache.cached(expire=None, key_builder=None, namespace=None)` - Caching decorator
+- `cache.cached(expire=None, key_builder=None, namespace=None, stampede_protection=True, lock_timeout=30, lock_wait=5.0)` - Caching decorator
+- `cache.lifespan_handler` - FastAPI lifespan that closes the backend on shutdown (`FastAPI(lifespan=cache.lifespan_handler)`)
 
 ### CacheBackend Interface
 

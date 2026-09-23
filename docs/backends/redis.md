@@ -34,3 +34,4 @@ async def expensive_operation(x: int):
 
 - Use Redis for distributed, production-grade caching.
 - Make sure your Redis server is running and accessible.
+- Redis supports [stampede protection](../usage.md#4-stampede-protection), which is enabled by default for `@cache.cached()`.

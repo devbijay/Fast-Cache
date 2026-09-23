@@ -1,8 +1,10 @@
 import pickle
 import time
 from typing import Any, Optional, Union
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from .backend import CacheBackend
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 class MongoDBBackend(CacheBackend):
@@ -14,6 +16,7 @@ class MongoDBBackend(CacheBackend):
       - _id: the cache key (optionally namespaced)
       - value: the pickled cached value
       - expires_at: epoch time when the entry should expire
+      - expires_at_date: the same expiration time as a BSON date, used by the TTL index
 
     Expired documents are deleted automatically by MongoDB's TTL monitor,
     but expiration is also checked in code to avoid returning stale data.
@@ -43,6 +46,9 @@ class MongoDBBackend(CacheBackend):
         self._sync_db = self._sync_client.get_default_database()
         self._sync_collection = self._sync_db[self._namespace]
         self._sync_collection.create_index("expires_at", expireAfterSeconds=0)
+        # TTL indexes only expire BSON dates, so the numeric expires_at field
+        # is never cleaned up by MongoDB. expires_at_date drives expiration.
+        self._sync_collection.create_index("expires_at_date", expireAfterSeconds=0)
 
         # Async client
         self._async_client = pymongo.AsyncMongoClient(uri)
@@ -92,13 +98,10 @@ class MongoDBBackend(CacheBackend):
             expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
                                                      If None, the entry never expires.
         """
-        update = {"value": pickle.dumps(value)}
-        exptime = self._compute_expire_at(expire)
-        if exptime is not None:
-            update["expires_at"] = exptime
-
         self._sync_collection.update_one(
-            {"_id": self._make_key(key)}, {"$set": update}, upsert=True
+            {"_id": self._make_key(key)},
+            self._build_update(value, expire),
+            upsert=True,
         )
 
     def delete(self, key: str) -> None:
@@ -160,13 +163,10 @@ class MongoDBBackend(CacheBackend):
             expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
                                                      If None, the entry never expires.
         """
-        update = {"value": pickle.dumps(value)}
-        exptime = self._compute_expire_at(expire)
-        if exptime is not None:
-            update["expires_at"] = exptime
-
         await self._async_collection.update_one(
-            {"_id": self._make_key(key)}, {"$set": update}, upsert=True
+            {"_id": self._make_key(key)},
+            self._build_update(value, expire),
+            upsert=True,
         )
 
     async def adelete(self, key: str) -> None:
@@ -212,11 +212,57 @@ class MongoDBBackend(CacheBackend):
         self._sync_client.close()
         await self._async_client.close()
 
+    def _build_update(
+        self, value: Any, expire: Optional[Union[int, timedelta]]
+    ) -> dict:
+        """
+        Build the update document for storing a cache entry.
+
+        Args:
+            value (Any): The value to cache.
+            expire (Optional[Union[int, timedelta]]): Expiration time in seconds or as timedelta.
+
+        Returns:
+            dict: A MongoDB update document. Entries without expiration have any
+            previous expiration fields removed.
+        """
+        expires_at = self._compute_expire_at(expire)
+        if expires_at is None:
+            return {
+                "$set": {"value": pickle.dumps(value)},
+                "$unset": {"expires_at": "", "expires_at_date": ""},
+            }
+
+        update = {"$set": {"value": pickle.dumps(value), "expires_at": expires_at}}
+        expires_at_date = self._to_ttl_date(expires_at)
+        if expires_at_date is None:
+            update["$unset"] = {"expires_at_date": ""}
+        else:
+            update["$set"]["expires_at_date"] = expires_at_date
+        return update
+
     @staticmethod
-    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[int]:
+    def _to_ttl_date(expires_at: float) -> Optional[datetime]:
+        """
+        Convert an epoch timestamp to a date for the TTL index.
+
+        Args:
+            expires_at (float): Expiration time as a Unix epoch timestamp in seconds.
+
+        Returns:
+            Optional[datetime]: The UTC date, or None if it is beyond the supported
+            date range. Such entries still expire through ``expires_at`` on read.
+        """
+        try:
+            return _EPOCH + timedelta(seconds=expires_at)
+        except OverflowError:
+            return None
+
+    @staticmethod
+    def _compute_expire_at(expire: Optional[Union[int, timedelta]]) -> Optional[float]:
         if expire is not None:
             if isinstance(expire, timedelta):
-                return int(time.time() + expire.total_seconds())
+                return time.time() + expire.total_seconds()
             else:
-                return int(time.time() + expire)
+                return time.time() + expire
         return None

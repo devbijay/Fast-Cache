@@ -81,6 +81,8 @@ async def expensive_operation(x: int):
 - **No built-in authentication by default:**  
   SASL authentication is available if enabled on the server and configured in the backend.
 - **Best for stateless, high-throughput caching.**
+- **Keys are hashed when Memcached would reject them:**  
+  Keys longer than 250 bytes or containing whitespace or control characters are stored as `<namespace>:hash:<sha256>`. Other keys are stored unchanged.
 
 ---
 
