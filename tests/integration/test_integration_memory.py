@@ -1,9 +1,10 @@
 import time
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from examples.main import app
-from fast_cache import cache, InMemoryBackend
+from fast_cache import cache, FastAPICache, InMemoryBackend
 
 
 @pytest.fixture
@@ -143,3 +144,30 @@ def test_weather_skip_cache(client):
     resp3 = client.get("/weather", params={"city": "London", "skip_cache": True})
     assert resp3.status_code == 200
     assert resp3.json()["weather"] == val1
+
+
+def test_lifespan_handler():
+    lifespan_cache = FastAPICache()
+    lifespan_app = FastAPI(lifespan=lifespan_cache.lifespan_handler)
+    backend = InMemoryBackend(namespace="lifespan-demo")
+    lifespan_cache.init_app(app=lifespan_app, backend=backend)
+    calls = 0
+
+    @lifespan_app.get("/items/{item_id}")
+    @lifespan_cache.cached(expire=60)
+    async def get_item(item_id: int):
+        nonlocal calls
+        calls += 1
+        return {"item_id": item_id}
+
+    with TestClient(lifespan_app) as lifespan_client:
+        assert lifespan_app.state.cache is lifespan_cache
+
+        resp1 = lifespan_client.get("/items/1")
+        resp2 = lifespan_client.get("/items/1")
+        assert resp1.json() == resp2.json() == {"item_id": 1}
+        assert calls == 1
+
+    # Shutdown detaches the backend
+    with pytest.raises(RuntimeError):
+        lifespan_cache.get_cache()

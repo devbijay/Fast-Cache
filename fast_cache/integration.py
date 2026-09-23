@@ -274,7 +274,11 @@ class FastAPICache:
         """
         if not hasattr(app, "state"):
             app.state = {}
-        app.state["cache"] = self
+
+        if isinstance(app.state, dict):
+            app.state["cache"] = self
+        else:
+            app.state.cache = self
 
         try:
             yield
