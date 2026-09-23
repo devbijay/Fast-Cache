@@ -4,9 +4,12 @@ from typing import Optional, Callable, Union, AsyncIterator, Any
 from datetime import timedelta
 import asyncio
 import inspect
+import logging
 import time
 from functools import wraps
 from .backends.backend import CacheBackend
+
+logger = logging.getLogger(__name__)
 
 _CACHE_MISS = object()
 
@@ -43,6 +46,78 @@ class FastAPICache:
         if self._backend is None:
             raise RuntimeError("Cache not initialized. Call init_app first.")
         return self._backend
+
+    async def _aget(self, key: str) -> Any:
+        """Read a cached value, treating backend errors as a cache miss."""
+        try:
+            return await self._backend.aget(key, default=_CACHE_MISS)
+        except Exception as e:
+            logger.warning("Cache aget failed: %s", e)
+            return _CACHE_MISS
+
+    def _get(self, key: str) -> Any:
+        """Read a cached value, treating backend errors as a cache miss."""
+        try:
+            return self._backend.get(key, default=_CACHE_MISS)
+        except Exception as e:
+            logger.warning("Cache get failed: %s", e)
+            return _CACHE_MISS
+
+    async def _aset(
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]]
+    ) -> None:
+        """Store a value, logging backend errors instead of raising."""
+        try:
+            await self._backend.aset(key, value, expire=expire)
+        except Exception as e:
+            logger.warning("Cache aset failed: %s", e)
+
+    def _set(
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]]
+    ) -> None:
+        """Store a value, logging backend errors instead of raising."""
+        try:
+            self._backend.set(key, value, expire=expire)
+        except Exception as e:
+            logger.warning("Cache set failed: %s", e)
+
+    async def _atry_acquire_lock(self, key: str, timeout: int) -> Optional[str]:
+        """
+        Make a single attempt to acquire the stampede lock.
+
+        Prefers the backend's ``atry_acquire_lock``, which raises when the
+        backend is unreachable, so callers can stop waiting immediately.
+        """
+        try_acquire = getattr(self._backend, "atry_acquire_lock", None)
+        if try_acquire is not None:
+            return await try_acquire(key, timeout=timeout)
+        return await self._backend.aacquire_lock(key, timeout=timeout, wait=0)
+
+    def _try_acquire_lock(self, key: str, timeout: int) -> Optional[str]:
+        """
+        Make a single attempt to acquire the stampede lock.
+
+        Prefers the backend's ``try_acquire_lock``, which raises when the
+        backend is unreachable, so callers can stop waiting immediately.
+        """
+        try_acquire = getattr(self._backend, "try_acquire_lock", None)
+        if try_acquire is not None:
+            return try_acquire(key, timeout=timeout)
+        return self._backend.acquire_lock(key, timeout=timeout, wait=0)
+
+    async def _arelease_lock(self, key: str, token: str) -> None:
+        """Release the stampede lock, logging backend errors instead of raising."""
+        try:
+            await self._backend.arelease_lock(key, token)
+        except Exception as e:
+            logger.warning("Lock arelease failed: %s", e)
+
+    def _release_lock(self, key: str, token: str) -> None:
+        """Release the stampede lock, logging backend errors instead of raising."""
+        try:
+            self._backend.release_lock(key, token)
+        except Exception as e:
+            logger.warning("Lock release failed: %s", e)
 
     def cached(
         self,
@@ -133,9 +208,14 @@ class FastAPICache:
                 effective_expire = expire or self._default_expire
 
                 # Fast path: cache hit
-                cached_value = await self._backend.aget(
-                    cache_key, default=_CACHE_MISS
-                )
+                try:
+                    cached_value = await self._backend.aget(
+                        cache_key, default=_CACHE_MISS
+                    )
+                except Exception as e:
+                    # Backend unavailable; serve the request without caching.
+                    logger.warning("Cache aget failed: %s", e)
+                    return await func(*args, **kwargs)
                 if cached_value is not _CACHE_MISS:
                     return cached_value
 
@@ -143,43 +223,40 @@ class FastAPICache:
                 if stampede_protection and _backend_supports_locking():
                     deadline = time.monotonic() + lock_wait
                     while True:
-                        token = await self._backend.aacquire_lock(
-                            cache_key, timeout=lock_timeout, wait=0
-                        )
+                        try:
+                            token = await self._atry_acquire_lock(
+                                cache_key, lock_timeout
+                            )
+                        except Exception as e:
+                            logger.warning("Lock aacquire failed: %s", e)
+                            return await func(*args, **kwargs)
+
                         if token is not None:
                             try:
                                 # The previous lock holder may have already
                                 # populated the cache.
-                                cached_value = await self._backend.aget(
-                                    cache_key, default=_CACHE_MISS
-                                )
+                                cached_value = await self._aget(cache_key)
                                 if cached_value is not _CACHE_MISS:
                                     return cached_value
 
                                 result = await func(*args, **kwargs)
-                                await self._backend.aset(
-                                    cache_key, result, expire=effective_expire
-                                )
+                                await self._aset(cache_key, result, effective_expire)
                                 return result
                             finally:
-                                await self._backend.arelease_lock(cache_key, token)
+                                await self._arelease_lock(cache_key, token)
 
                         if time.monotonic() >= deadline:
                             # Lock holder is too slow; compute without caching.
                             return await func(*args, **kwargs)
 
                         await asyncio.sleep(_LOCK_POLL_INTERVAL)
-                        cached_value = await self._backend.aget(
-                            cache_key, default=_CACHE_MISS
-                        )
+                        cached_value = await self._aget(cache_key)
                         if cached_value is not _CACHE_MISS:
                             return cached_value
 
                 # No stampede protection — original behavior
                 result = await func(*args, **kwargs)
-                await self._backend.aset(
-                    cache_key, result, expire=effective_expire
-                )
+                await self._aset(cache_key, result, effective_expire)
                 return result
 
             @wraps(func)
@@ -205,9 +282,14 @@ class FastAPICache:
                 effective_expire = expire or self._default_expire
 
                 # Fast path: cache hit
-                cached_value = self._backend.get(
-                    cache_key, default=_CACHE_MISS
-                )
+                try:
+                    cached_value = self._backend.get(
+                        cache_key, default=_CACHE_MISS
+                    )
+                except Exception as e:
+                    # Backend unavailable; serve the request without caching.
+                    logger.warning("Cache get failed: %s", e)
+                    return func(*args, **kwargs)
                 if cached_value is not _CACHE_MISS:
                     return cached_value
 
@@ -215,43 +297,38 @@ class FastAPICache:
                 if stampede_protection and _backend_supports_locking():
                     deadline = time.monotonic() + lock_wait
                     while True:
-                        token = self._backend.acquire_lock(
-                            cache_key, timeout=lock_timeout, wait=0
-                        )
+                        try:
+                            token = self._try_acquire_lock(cache_key, lock_timeout)
+                        except Exception as e:
+                            logger.warning("Lock acquire failed: %s", e)
+                            return func(*args, **kwargs)
+
                         if token is not None:
                             try:
                                 # The previous lock holder may have already
                                 # populated the cache.
-                                cached_value = self._backend.get(
-                                    cache_key, default=_CACHE_MISS
-                                )
+                                cached_value = self._get(cache_key)
                                 if cached_value is not _CACHE_MISS:
                                     return cached_value
 
                                 result = func(*args, **kwargs)
-                                self._backend.set(
-                                    cache_key, result, expire=effective_expire
-                                )
+                                self._set(cache_key, result, effective_expire)
                                 return result
                             finally:
-                                self._backend.release_lock(cache_key, token)
+                                self._release_lock(cache_key, token)
 
                         if time.monotonic() >= deadline:
                             # Lock holder is too slow; compute without caching.
                             return func(*args, **kwargs)
 
                         time.sleep(_LOCK_POLL_INTERVAL)
-                        cached_value = self._backend.get(
-                            cache_key, default=_CACHE_MISS
-                        )
+                        cached_value = self._get(cache_key)
                         if cached_value is not _CACHE_MISS:
                             return cached_value
 
                 # No stampede protection — original behavior
                 result = func(*args, **kwargs)
-                self._backend.set(
-                    cache_key, result, expire=effective_expire
-                )
+                self._set(cache_key, result, effective_expire)
                 return result
 
             return async_wrapper if is_async else sync_wrapper

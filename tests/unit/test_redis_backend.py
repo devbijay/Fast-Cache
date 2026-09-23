@@ -4,6 +4,9 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from unittest.mock import patch
+
+import redis
 from fastapi import FastAPI
 from fast_cache import FastAPICache, RedisBackend
 
@@ -185,6 +188,22 @@ def test_lock_auto_expires(cache):
     cache.release_lock("expiry", new_token)
 
 
+def test_try_acquire_lock(cache):
+    """try_acquire_lock returns a token, then None while the lock is held."""
+    token = cache.try_acquire_lock("trylock", timeout=5)
+    assert token is not None
+    assert cache.try_acquire_lock("trylock", timeout=5) is None
+    assert cache.release_lock("trylock", token) is True
+
+
+def test_try_acquire_lock_raises_on_connection_error(cache):
+    """try_acquire_lock surfaces Redis errors instead of returning None."""
+    error = redis.ConnectionError("unavailable")
+    with patch.object(cache._sync_client, "set", side_effect=error):
+        with pytest.raises(redis.ConnectionError):
+            cache.try_acquire_lock("trylock", timeout=5)
+
+
 # ---- LOCK TESTS (ASYNC) ----
 @pytest.mark.asyncio
 async def test_async_acquire_and_release_lock(cache):
@@ -222,6 +241,24 @@ async def test_async_lock_auto_expires(cache):
     new_token = await cache.aacquire_lock("aexpiry", timeout=5, wait=0)
     assert new_token is not None
     await cache.arelease_lock("aexpiry", new_token)
+
+
+@pytest.mark.asyncio
+async def test_async_try_acquire_lock(cache):
+    """atry_acquire_lock returns a token, then None while the lock is held."""
+    token = await cache.atry_acquire_lock("atrylock", timeout=5)
+    assert token is not None
+    assert await cache.atry_acquire_lock("atrylock", timeout=5) is None
+    assert await cache.arelease_lock("atrylock", token) is True
+
+
+@pytest.mark.asyncio
+async def test_async_try_acquire_lock_raises_on_connection_error(cache):
+    """atry_acquire_lock surfaces Redis errors instead of returning None."""
+    error = redis.ConnectionError("unavailable")
+    with patch.object(cache._async_client, "set", side_effect=error):
+        with pytest.raises(redis.ConnectionError):
+            await cache.atry_acquire_lock("atrylock", timeout=5)
 
 
 # ---- STAMPEDE TESTS (SYNC) ----
@@ -267,6 +304,29 @@ def test_cached_sync_falls_back_after_lock_wait(fastapi_cache, cache):
 
     assert calls == 1
     assert cache.get(cache_key) is None
+
+
+def test_cached_sync_redis_unavailable_skips_lock_wait(fastapi_cache, cache):
+    """With Redis unreachable, a miss runs the function without waiting for the lock."""
+    calls = 0
+
+    @fastapi_cache.cached(expire=60, lock_wait=5.0)
+    def compute():
+        nonlocal calls
+        calls += 1
+        return "fresh"
+
+    error = redis.ConnectionError("unavailable")
+    with (
+        patch.object(cache._sync_client, "get", side_effect=error),
+        patch.object(cache._sync_client, "set", side_effect=error),
+    ):
+        started = time.monotonic()
+        assert compute() == "fresh"
+        elapsed = time.monotonic() - started
+
+    assert calls == 1
+    assert elapsed < 1.0
 
 
 # ---- STAMPEDE TESTS (ASYNC) ----
@@ -335,3 +395,27 @@ async def test_cached_async_falls_back_after_lock_wait(fastapi_cache, cache):
 
     assert calls == 1
     assert await cache.aget(cache_key) is None
+
+
+@pytest.mark.asyncio
+async def test_cached_async_redis_unavailable_skips_lock_wait(fastapi_cache, cache):
+    """With Redis unreachable, a miss runs the function without waiting for the lock."""
+    calls = 0
+
+    @fastapi_cache.cached(expire=60, lock_wait=5.0)
+    async def compute():
+        nonlocal calls
+        calls += 1
+        return "fresh"
+
+    error = redis.ConnectionError("unavailable")
+    with (
+        patch.object(cache._async_client, "get", side_effect=error),
+        patch.object(cache._async_client, "set", side_effect=error),
+    ):
+        started = time.monotonic()
+        assert await compute() == "fresh"
+        elapsed = time.monotonic() - started
+
+    assert calls == 1
+    assert elapsed < 1.0

@@ -1,6 +1,9 @@
 import pytest
 import time
 import asyncio
+from fastapi import FastAPI
+
+from fast_cache import FastAPICache, PostgresBackend
 
 
 # ---- SYNC TESTS ----
@@ -35,6 +38,37 @@ def test_expire(postgres_cache):
     assert postgres_cache.get("foo") == "bar"
     time.sleep(1.1)
     assert postgres_cache.get("foo") is None
+
+
+def test_cached_function_runs_when_backend_unavailable(postgres_dsn):
+    """Backend errors inside @cached are logged and the function still runs."""
+    backend = PostgresBackend(postgres_dsn, namespace="pytest_unavailable")
+    backend.close()
+    fastapi_cache = FastAPICache()
+    fastapi_cache.init_app(FastAPI(), backend)
+    calls = 0
+
+    @fastapi_cache.cached(expire=60)
+    def compute(x):
+        nonlocal calls
+        calls += 1
+        return x * 2
+
+    assert compute(21) == 42
+    assert compute(21) == 42
+    assert calls == 2
+
+
+def test_cached_function_errors_propagate(postgres_cache):
+    fastapi_cache = FastAPICache()
+    fastapi_cache.init_app(FastAPI(), postgres_cache)
+
+    @fastapi_cache.cached(expire=60)
+    def compute():
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError):
+        compute()
 
 
 # ---- ASYNC TESTS ----
@@ -74,6 +108,41 @@ async def test_async_expire(async_postgres_cache):
     assert await async_postgres_cache.aget("foo") == "bar"
     await asyncio.sleep(1.1)
     assert await async_postgres_cache.aget("foo") is None
+
+
+@pytest.mark.asyncio
+async def test_async_cached_function_runs_when_backend_unavailable(postgres_dsn):
+    """Backend errors inside @cached are logged and the function still runs."""
+    backend = PostgresBackend(postgres_dsn, namespace="pytest_async_unavailable")
+    # Open the async pool before closing it; an unopened pool can still be opened later.
+    await backend.aget("warmup")
+    await backend.aclose()
+    fastapi_cache = FastAPICache()
+    fastapi_cache.init_app(FastAPI(), backend)
+    calls = 0
+
+    @fastapi_cache.cached(expire=60)
+    async def compute(x):
+        nonlocal calls
+        calls += 1
+        return x * 2
+
+    assert await compute(21) == 42
+    assert await compute(21) == 42
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_async_cached_function_errors_propagate(async_postgres_cache):
+    fastapi_cache = FastAPICache()
+    fastapi_cache.init_app(FastAPI(), async_postgres_cache)
+
+    @fastapi_cache.cached(expire=60)
+    async def compute():
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError):
+        await compute()
 
 
 # ---- DEFAULT PARAMETER TESTS ----

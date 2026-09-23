@@ -282,6 +282,46 @@ class RedisBackend(CacheBackend):
             logger.warning("Cache has failed: %s", e)
             return False
 
+    def try_acquire_lock(self, key: str, timeout: int = 30) -> Optional[str]:
+        """
+        Make a single, non-blocking attempt to acquire a distributed lock.
+
+        Unlike acquire_lock, Redis errors are raised rather than reported as
+        None, so callers can tell a held lock apart from an unreachable server.
+
+        Args:
+            key: Cache key to lock (lock suffix added internally).
+            timeout: Lock auto-expiry in seconds (deadlock protection).
+
+        Returns:
+            A token string if acquired, None if the lock is held by another caller.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        token = uuid.uuid4().hex
+        if self._sync_client.set(lock_key, token, nx=True, ex=timeout):
+            return token
+        return None
+
+    async def atry_acquire_lock(self, key: str, timeout: int = 30) -> Optional[str]:
+        """
+        Asynchronously make a single, non-blocking attempt to acquire a distributed lock.
+
+        Unlike aacquire_lock, Redis errors are raised rather than reported as
+        None, so callers can tell a held lock apart from an unreachable server.
+
+        Args:
+            key: Cache key to lock (lock suffix added internally).
+            timeout: Lock auto-expiry in seconds (deadlock protection).
+
+        Returns:
+            A token string if acquired, None if the lock is held by another caller.
+        """
+        lock_key = self._make_key(f"{key}:_lock")
+        token = uuid.uuid4().hex
+        if await self._async_client.set(lock_key, token, nx=True, ex=timeout):
+            return token
+        return None
+
     def acquire_lock(
         self,
         key: str,
